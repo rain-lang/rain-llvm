@@ -9,10 +9,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{AnyValueEnum, BasicValueEnum, FunctionValue};
-use rain_lang::value::{
-    lifetime::{Live},
-    TypeId, ValId, ValueEnum,
-};
+use rain_lang::value::{lifetime::Live, TypeId, ValId, ValueEnum};
 
 /**
 A local `rain` value
@@ -30,12 +27,12 @@ pub enum Local<'ctx> {
 /**
 A constant `rain` value or function
 */
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub enum Const<'ctx> {
     /// A normal constant value
     Value(BasicValueEnum<'ctx>),
     /// A compiled function
-    Function(FunctionValue<'ctx>)
+    Function(FunctionValue<'ctx>),
 }
 
 /**
@@ -50,7 +47,7 @@ pub enum Repr<'ctx> {
     /// As the empty type
     Empty,
     /// An irrepresentable type
-    Irrepresentable
+    Irrepresentable,
 }
 
 /**
@@ -87,7 +84,7 @@ pub enum Error {
     /// Attempted to create a non-constant value as a constant
     NotConst,
     /// Attempted to create a non-constant value of an irrepresentable type
-    Irrepresentable
+    Irrepresentable,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -112,7 +109,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Get a compiled constant `rain` value or function
     pub fn get_const(&mut self, v: &ValId) -> Result<Const<'ctx>, Error> {
         if v.lifetime().region().is_some() {
-            return Err(Error::NotConst)
+            return Err(Error::NotConst);
         }
         unimplemented!()
     }
