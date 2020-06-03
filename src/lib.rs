@@ -9,7 +9,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{AnyValueEnum, BasicValueEnum, FunctionValue};
-use rain_lang::value::{lifetime::Live, TypeId, ValId, ValueEnum};
+use rain_lang::value::{TypeId, ValId, ValueEnum};
 
 /**
 A local `rain` value
@@ -33,6 +33,10 @@ pub enum Const<'ctx> {
     Value(BasicValueEnum<'ctx>),
     /// A compiled function
     Function(FunctionValue<'ctx>),
+    /// A unit value
+    Unit,
+    /// A contradiction: undefined behaviour. This means the program made a wrong assumption!
+    Contradiction,
 }
 
 /**
@@ -107,10 +111,13 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
     /// Get a compiled constant `rain` value or function
-    pub fn get_const(&mut self, v: &ValId) -> Result<Const<'ctx>, Error> {
-        if v.lifetime().region().is_some() {
-            return Err(Error::NotConst);
+    pub fn compile_const(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
+        match v {
+            ValueEnum::BoolTy(_) => Ok(Const::Unit),
+            ValueEnum::Bool(b) => Ok(Const::Value(
+                self.context.bool_type().const_int(*b as u64, false).into(),
+            )),
+            _ => unimplemented!(),
         }
-        unimplemented!()
     }
 }
