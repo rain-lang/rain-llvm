@@ -1,5 +1,5 @@
 [package]
-name = "rain-codegen-llvm"
+name = "rain-llvm"
 version = "0.0.0"
 authors = ["Jad Ghalayini <jad.ghalayini@hotmail.com>"]
 edition = "2018"
