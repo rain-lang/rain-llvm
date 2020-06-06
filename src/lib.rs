@@ -6,12 +6,12 @@
 use fxhash::FxHashMap as HashMap;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::{Module, Linkage};
+use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValueEnum, FunctionValue};
 use rain_lang::value::{
     function::{lambda::Lambda, pi::Pi},
-    lifetime::Live,
+    lifetime::{Live, Region},
     TypeId, ValId, ValueEnum,
 };
 use std::ops::Deref;
@@ -19,7 +19,7 @@ use std::ops::Deref;
 /**
 A local `rain` value
 */
-#[derive(Debug, Clone)]
+#[derive(Copy, Debug, Clone, Eq, PartialEq)]
 pub enum Local<'ctx> {
     /// A normal value: the result of an instruction
     Value(AnyValueEnum<'ctx>),
@@ -29,10 +29,22 @@ pub enum Local<'ctx> {
     Contradiction,
 }
 
+impl<'ctx> From<Const<'ctx>> for Local<'ctx> {
+    #[inline]
+    fn from(c: Const<'ctx>) -> Local<'ctx> {
+        match c {
+            Const::Value(v) => Local::Value(v.into()),
+            Const::Function(f) => Local::Value(f.into()),
+            Const::Unit => Local::Unit,
+            Const::Contradiction => Local::Contradiction,
+        }
+    }
+}
+
 /**
 A constant `rain` value or function
 */
-#[derive(Debug, Clone)]
+#[derive(Copy, Debug, Clone, Eq, PartialEq)]
 pub enum Const<'ctx> {
     /// A normal constant value
     Value(BasicValueEnum<'ctx>),
@@ -64,41 +76,27 @@ pub enum Repr<'ctx> {
 /**
 A local `rain` code generation context
 */
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LocalCtx<'ctx> {
     /// Values defined for this function
     locals: HashMap<ValId, Local<'ctx>>,
+    /// The region associated with this local context
+    region: Region,
     /// The function for which this context is defined
     func: FunctionValue<'ctx>,
 }
 
 impl<'ctx> LocalCtx<'ctx> {
     /// Crate a new code generation context with a given function as base
-    pub fn new(func: FunctionValue<'ctx>) -> LocalCtx<'ctx> {
+    pub fn new(
+        _codegen: &Codegen<'ctx>,
+        region: Region,
+        func: FunctionValue<'ctx>,
+    ) -> LocalCtx<'ctx> {
         LocalCtx {
             locals: HashMap::default(),
-            func
-        }
-    }
-}
-
-/**
-A global `rain` code generation context for a given codegen module
-*/
-#[derive(Debug, Clone)]
-pub struct GlobalCtx<'ctx> {
-    /// Global compiled values
-    vals: HashMap<ValId, AnyValueEnum<'ctx>>,
-    /// Type representations
-    reprs: HashMap<TypeId, Repr<'ctx>>,
-}
-
-impl<'ctx> GlobalCtx<'ctx> {
-    /// Create a new, empty global context
-    pub fn new() -> GlobalCtx<'ctx> {
-        GlobalCtx {
-            vals: HashMap::default(),
-            reprs: HashMap::default(),
+            region,
+            func,
         }
     }
 }
@@ -108,13 +106,15 @@ A `rain` code generation context for a given module
 */
 #[derive(Debug)]
 pub struct Codegen<'ctx> {
-    /// The global code generation context for the module being generated
-    global: GlobalCtx<'ctx>,
+    /// Global compiled values
+    consts: HashMap<ValId, Const<'ctx>>,
+    /// Type representations
+    reprs: HashMap<TypeId, Repr<'ctx>>,
     /// Function name counter
     counter: usize,
     /// The module being generated
     module: Module<'ctx>,
-    /// The builder being used
+    /// The IR builder for this local context
     builder: Builder<'ctx>,
     /// The enclosing context of this codegen context
     context: &'ctx Context,
@@ -129,6 +129,8 @@ pub enum Error {
     Irrepresentable,
     /// Invalid function representation
     InvalidFuncRepr,
+    /// An internal error
+    InternalError(&'static str),
     /// Not implemented
     NotImplemented(&'static str),
 }
@@ -137,7 +139,8 @@ impl<'ctx> Codegen<'ctx> {
     /// Create a new, empty code-generation context
     pub fn new(context: &'ctx Context, module_name: &str) -> Codegen<'ctx> {
         Codegen {
-            global: GlobalCtx::new(),
+            consts: HashMap::default(),
+            reprs: HashMap::default(),
             counter: 0,
             module: context.create_module(module_name),
             builder: context.create_builder(),
@@ -194,6 +197,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Compile a return value into a function context
     pub fn compile_retv(&mut self, ctx: &mut LocalCtx<'ctx>, v: &ValId) -> Result<(), Error> {
+        let _retv = self.compile(ctx, v)?;
         unimplemented!()
     }
 
@@ -208,19 +212,19 @@ impl<'ctx> Codegen<'ctx> {
                 let fn_val = self.module.add_function(
                     &format!("_private_lambda_{}", self.counter),
                     fn_ty,
-                    Some(Linkage::Private)
+                    Some(Linkage::Private),
                 );
-                let mut ctx = LocalCtx::new(fn_val);
+                let mut ctx = LocalCtx::new(self, l.def_region().clone(), fn_val);
                 self.compile_retv(&mut ctx, l.result())?;
                 Ok(Const::Function(fn_val))
-            },
+            }
             Repr::Unit => Ok(Const::Unit),
-            _ => Err(Error::InvalidFuncRepr)
+            _ => Err(Error::InvalidFuncRepr),
         }
-
     }
+
     /// Get a compiled constant `rain` value or function
-    pub fn compile_const(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
+    pub fn compile_const_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
             ValueEnum::BoolTy(_) => Ok(Const::Unit),
             ValueEnum::Bool(b) => Ok(Const::Value(
@@ -238,5 +242,56 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Sexpr(_s) => unimplemented!(),
             ValueEnum::Universe(_) => Ok(Const::Unit),
         }
+    }
+
+    /// Get a compiled constant `rain` value
+    pub fn compile_const(&mut self, v: &ValId) -> Result<Const<'ctx>, Error> {
+        if let Some(c) = self.consts.get(v) {
+            Ok(*c)
+        } else {
+            let c = self.compile_const_enum(v.as_enum())?;
+            self.consts.insert(v.clone(), c);
+            Ok(c)
+        }
+    }
+
+    /// Compile a `ValueEnum` in a local context
+    pub fn compile_enum(&mut self, _ctx: &mut LocalCtx<'ctx>, v: &ValueEnum) -> Result<Local<'ctx>, Error> {
+        match v {
+            v @ ValueEnum::BoolTy(_) 
+            | v @ ValueEnum::Bool(_) 
+            | v @ ValueEnum::Finite(_) 
+            | v @ ValueEnum::Index(_) 
+            | v @ ValueEnum::Universe(_) => self.compile_const_enum(v).map(Local::from),
+            ValueEnum::Lambda(_l) => unimplemented!(),
+            ValueEnum::Pi(_p) => unimplemented!(),
+            ValueEnum::Gamma(_g) => unimplemented!(),
+            ValueEnum::Phi(_p) => unimplemented!(),
+            ValueEnum::Parameter(_) => unimplemented!(),
+            ValueEnum::Product(_p) => unimplemented!(),
+            ValueEnum::Tuple(_t) => unimplemented!(),
+            ValueEnum::Sexpr(_s) => unimplemented!()
+        }
+    }
+
+    /// Compile a `ValId` in a local context
+    pub fn compile(&mut self, ctx: &mut LocalCtx<'ctx>, v: &ValId) -> Result<Local<'ctx>, Error> {
+        // NOTE: compiling a constant never leaves the builder, and we do not implemented nested regions currently.
+        // Hence, we work with the (bad) assumption that we never have to worry about the builder jumping around because
+        // any serialization respecting dependency order is a valid serialization. Note we *also* ignore lifetime order,
+        // but we'll fix that when we implement DFS
+        if ctx.region.depth() > 1 {
+            return Err(Error::NotImplemented("Nested region ValId compilation"));
+        }
+        // Constant regions are constants
+        if v.lifetime().depth() == 0 {
+            return self.compile_const(v).map(Local::from);
+        } else if let Some(l) = ctx.locals.get(v) {
+            // Check the local cache
+            return Ok(*l);
+        }
+        let result = self.compile_enum(ctx, v.as_enum())?;
+        ctx.locals.insert(v.clone(), result);
+        Ok(result)
     }
 }
