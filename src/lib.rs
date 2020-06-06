@@ -117,7 +117,17 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Bool(b) => Ok(Const::Value(
                 self.context.bool_type().const_int(*b as u64, false).into(),
             )),
-            _ => unimplemented!(),
+            ValueEnum::Finite(_) => Ok(Const::Unit),
+            ValueEnum::Index(_i) => unimplemented!(),
+            ValueEnum::Lambda(_l) => unimplemented!(),
+            ValueEnum::Pi(_p) => unimplemented!(),
+            ValueEnum::Gamma(_g) => unimplemented!(),
+            ValueEnum::Phi(_p) => unimplemented!(),
+            ValueEnum::Parameter(_) => Err(Error::NotConst),
+            ValueEnum::Product(_p) => unimplemented!(),
+            ValueEnum::Tuple(_t) => unimplemented!(),
+            ValueEnum::Sexpr(_s) => unimplemented!(),
+            ValueEnum::Universe(_) => Ok(Const::Unit)
         }
     }
 }
