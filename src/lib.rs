@@ -8,7 +8,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicTypeEnum, FunctionType};
-use inkwell::values::{AnyValueEnum, BasicValueEnum, FunctionValue};
+use inkwell::values::{AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue};
 use rain_lang::value::{
     function::{lambda::Lambda, pi::Pi},
     lifetime::{Live, Region},
@@ -196,9 +196,41 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Compile a return value into a function context
-    pub fn compile_retv(&mut self, ctx: &mut LocalCtx<'ctx>, v: &ValId) -> Result<(), Error> {
-        let _retv = self.compile(ctx, v)?;
-        unimplemented!()
+    pub fn compile_retv(
+        &mut self,
+        ctx: &mut LocalCtx<'ctx>,
+        v: &ValId,
+    ) -> Result<InstructionValue<'ctx>, Error> {
+        let retv = self.compile(ctx, v)?;
+        let undef_retv: Option<BasicValueEnum> = match retv {
+            Local::Unit | Local::Contradiction => {
+                ctx.func.get_type().get_return_type().map(|ty| match ty {
+                    BasicTypeEnum::ArrayType(a) => a.get_undef().into(),
+                    BasicTypeEnum::FloatType(f) => f.get_undef().into(),
+                    BasicTypeEnum::IntType(i) => i.get_undef().into(),
+                    BasicTypeEnum::PointerType(p) => p.get_undef().into(),
+                    BasicTypeEnum::StructType(s) => s.get_undef().into(),
+                    BasicTypeEnum::VectorType(v) => v.get_undef().into(),
+                })
+            }
+            _ => None,
+        };
+        let retv_borrow = match &retv {
+            Local::Value(v) => match v {
+                AnyValueEnum::ArrayValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::IntValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::FloatValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::PhiValue(_) => unimplemented!(),
+                AnyValueEnum::FunctionValue(_) => unimplemented!(),
+                AnyValueEnum::PointerValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::StructValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::VectorValue(v) => Some(v as &dyn BasicValue),
+                AnyValueEnum::InstructionValue(_) => unimplemented!(),
+            },
+            Local::Unit | Local::Contradiction => undef_retv.as_ref().map(|v| v as &dyn BasicValue),
+        };
+        let ret = self.builder.build_return(retv_borrow);
+        Ok(ret)
     }
 
     /// Compile a constant `rain` lambda function
@@ -256,12 +288,16 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Compile a `ValueEnum` in a local context
-    pub fn compile_enum(&mut self, _ctx: &mut LocalCtx<'ctx>, v: &ValueEnum) -> Result<Local<'ctx>, Error> {
+    pub fn compile_enum(
+        &mut self,
+        _ctx: &mut LocalCtx<'ctx>,
+        v: &ValueEnum,
+    ) -> Result<Local<'ctx>, Error> {
         match v {
-            v @ ValueEnum::BoolTy(_) 
-            | v @ ValueEnum::Bool(_) 
-            | v @ ValueEnum::Finite(_) 
-            | v @ ValueEnum::Index(_) 
+            v @ ValueEnum::BoolTy(_)
+            | v @ ValueEnum::Bool(_)
+            | v @ ValueEnum::Finite(_)
+            | v @ ValueEnum::Index(_)
             | v @ ValueEnum::Universe(_) => self.compile_const_enum(v).map(Local::from),
             ValueEnum::Lambda(_l) => unimplemented!(),
             ValueEnum::Pi(_p) => unimplemented!(),
@@ -270,7 +306,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Parameter(_) => unimplemented!(),
             ValueEnum::Product(_p) => unimplemented!(),
             ValueEnum::Tuple(_t) => unimplemented!(),
-            ValueEnum::Sexpr(_s) => unimplemented!()
+            ValueEnum::Sexpr(_s) => unimplemented!(),
         }
     }
 
