@@ -154,14 +154,17 @@ pub enum Error {
     NotImplemented(&'static str),
 }
 
+/// The default linkage of lambda values
+pub const DEFAULT_LAMBDA_LINKAGE: Option<Linkage> = None;
+
 impl<'ctx> Codegen<'ctx> {
     /// Create a new, empty code-generation context
-    pub fn new(context: &'ctx Context, module_name: &str) -> Codegen<'ctx> {
+    pub fn new(context: &'ctx Context, module: Module<'ctx>) -> Codegen<'ctx> {
         Codegen {
             consts: HashMap::default(),
             reprs: HashMap::default(),
             counter: 0,
-            module: context.create_module(module_name),
+            module,
             builder: context.create_builder(),
             context,
         }
@@ -224,7 +227,7 @@ impl<'ctx> Codegen<'ctx> {
         let result_fn = self.module.add_function(
             &format!("__lambda_{}", self.counter),
             result_ty,
-            Some(Linkage::Private),
+            DEFAULT_LAMBDA_LINKAGE,
         );
         self.counter += 1;
 
@@ -270,6 +273,8 @@ impl<'ctx> Codegen<'ctx> {
         ctx: &mut LocalCtx<'ctx>,
         v: &ValId,
     ) -> Result<InstructionValue<'ctx>, Error> {
+        let basic_block = self.context.append_basic_block(ctx.func, "entry");
+        self.builder.position_at_end(basic_block);
         let retv = self.compile(ctx, v)?;
         let undef_retv: Option<BasicValueEnum> = match retv {
             Local::Unit | Local::Contradiction => {
@@ -416,5 +421,52 @@ impl<'ctx> Codegen<'ctx> {
         let result = self.compile_enum(ctx, v.as_enum())?;
         ctx.locals.insert(v.clone(), result);
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inkwell::execution_engine::JitFunction;
+    use inkwell::OptimizationLevel;
+    use rain_lang::parser::builder::Builder;
+
+    #[test]
+    fn identity_lambda_compiles_properly() {
+        // Setup
+        let mut builder = Builder::<&str>::new();
+        let context = Context::create();
+        let module = context.create_module("identity_bool");
+        let execution_engine = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .unwrap();
+        let mut codegen = Codegen::new(&context, module);
+
+        // ValId construction
+        let (rest, id) = builder.parse_expr("|x: #bool| x").expect("Valid lambda");
+        assert_eq!(rest, "");
+
+        // Codegen
+        let f = match codegen.compile_const(&id).expect("Valid constant") {
+            Const::Function(f) => f,
+            r => panic!("Invalid constant generated: {:?}", r),
+        };
+
+        let f_name = f
+            .get_name()
+            .to_str()
+            .expect("Generated ame must be valid UTF-8");
+        assert_eq!(f_name, "__lambda_0");
+
+        // Jit
+        let jit_f: JitFunction<unsafe extern "C" fn(bool) -> bool> =
+            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+
+        // Run
+        for x in [true, false].iter() {
+            unsafe {
+                assert_eq!(jit_f.call(*x), *x);
+            }
+        }
     }
 }
