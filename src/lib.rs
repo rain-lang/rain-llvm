@@ -40,6 +40,7 @@ impl<'ctx> From<Const<'ctx>> for Local<'ctx> {
             Const::Function(f) => Local::Value(f.into()),
             Const::Unit => Local::Unit,
             Const::Contradiction => Local::Contradiction,
+            Const::Irrep => Local::Irrep,
         }
     }
 }
@@ -197,12 +198,13 @@ impl<'ctx> Codegen<'ctx> {
         const EMPTY_IX: isize = -2;
         const IRREP_IX: isize = -3;
 
-        for (i, input_ty) in region.iter().enumerate() {
+        for input_ty in region.iter() {
             match self.get_repr(input_ty)? {
                 Repr::Type(t) => {
                     input_ixes.push(input_reprs.len() as isize);
                     input_reprs.push(t);
                 }
+                Repr::Function(_) => unimplemented!(),
                 Repr::Prop => {
                     input_ixes.push(PROP_IX);
                 }
@@ -220,7 +222,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Construct an empty function of a given type
         let result_fn = self.module.add_function(
-            format!("__lambda_{}", self.counter),
+            &format!("__lambda_{}", self.counter),
             result_ty,
             Some(Linkage::Private),
         );
@@ -229,21 +231,33 @@ impl<'ctx> Codegen<'ctx> {
         // Construct a context, binding local values to types
         let mut ctx = LocalCtx::new(self, region.clone(), result_fn);
         for (i, ix) in input_ixes.iter().copied().enumerate() {
-            let param = ValId::from(region.param(i).expect("Iterated index is in bounds"));
+            let param = ValId::from(
+                region
+                    .clone()
+                    .param(i)
+                    .expect("Iterated index is in bounds"),
+            );
             match ix {
-                PROP_IX => ctx.locals.insert(param, Local::Unit),
-                EMPTY_IX => ctx.locals.insert(param, Local::Contradiction),
-                IRREP_IX => ctx.locals.insert(param, Local::Irrep),
-                ix if ix >= 0 && ix < input_reprs.len() as isize => ctx.locals.insert(
-                    param,
-                    Local::Value(
-                        result_fn
-                            .get_nth_param(ix as u32)
-                            .expect("Index in vector is in bounds")
-                            .into(),
-                    ),
-                ),
-                n => panic!("Invalid representation index {}!", n),
+                PROP_IX => {
+                    ctx.locals.insert(param, Local::Unit);
+                }
+                EMPTY_IX => {
+                    ctx.locals.insert(param, Local::Contradiction);
+                }
+                IRREP_IX => {
+                    ctx.locals.insert(param, Local::Irrep);
+                }
+                ix => {
+                    ctx.locals.insert(
+                        param,
+                        Local::Value(
+                            result_fn
+                                .get_nth_param(ix as u32)
+                                .expect("Index in vector is in bounds")
+                                .into(),
+                        ),
+                    );
+                }
             }
         }
 
@@ -282,7 +296,9 @@ impl<'ctx> Codegen<'ctx> {
                 AnyValueEnum::VectorValue(v) => Some(v as &dyn BasicValue),
                 AnyValueEnum::InstructionValue(_) => unimplemented!(),
             },
-            Local::Unit | Local::Contradiction => undef_retv.as_ref().map(|v| v as &dyn BasicValue),
+            Local::Unit | Local::Contradiction | Local::Irrep => {
+                undef_retv.as_ref().map(|v| v as &dyn BasicValue)
+            }
         };
         let ret = self.builder.build_return(retv_borrow);
         Ok(ret)
@@ -294,7 +310,7 @@ impl<'ctx> Codegen<'ctx> {
         let prototype = self.const_pi_prototype(ty.deref())?;
 
         match prototype {
-            Prototype::Ctx(ctx) => {
+            Prototype::Ctx(mut ctx) => {
                 self.compile_retv(&mut ctx, l.result())?;
                 Ok(Const::Function(ctx.func))
             }
@@ -350,7 +366,11 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Compile a tuple in a local context
-    pub fn compile_tuple(&mut self, ctx: &mut LocalCtx<'ctx>, p: &Tuple) -> Result<Local<'ctx>, Error> {
+    pub fn compile_tuple(
+        &mut self,
+        _ctx: &mut LocalCtx<'ctx>,
+        _p: &Tuple,
+    ) -> Result<Local<'ctx>, Error> {
         unimplemented!()
     }
 
