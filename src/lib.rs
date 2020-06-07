@@ -7,11 +7,12 @@ use fxhash::FxHashMap as HashMap;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicTypeEnum, FunctionType};
+use inkwell::types::{BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue};
 use rain_lang::value::{
     function::{lambda::Lambda, pi::Pi},
-    lifetime::{Live, Region},
+    lifetime::{Live, Parameter, Region},
+    tuple::Tuple,
     TypeId, ValId, ValueEnum,
 };
 use std::ops::Deref;
@@ -27,6 +28,8 @@ pub enum Local<'ctx> {
     Unit,
     /// A contradiction: undefined behaviour
     Contradiction,
+    /// An irrepresentable value
+    Irrep,
 }
 
 impl<'ctx> From<Const<'ctx>> for Local<'ctx> {
@@ -54,6 +57,8 @@ pub enum Const<'ctx> {
     Unit,
     /// A contradiction: undefined behaviour. This means the program made a wrong assumption!
     Contradiction,
+    /// An irrepresentable value
+    Irrep,
 }
 
 /**
@@ -65,12 +70,25 @@ pub enum Repr<'ctx> {
     Type(BasicTypeEnum<'ctx>),
     /// As a function
     Function(FunctionType<'ctx>),
-    /// As the unit type
-    Unit,
+    /// As a mere proposition
+    Prop,
     /// As the empty type
     Empty,
     /// An irrepresentable type
-    Irrepresentable,
+    Irrep,
+}
+
+/**
+A function prototype
+*/
+#[derive(Debug)]
+pub enum Prototype<'ctx> {
+    /// A local context to build the function in
+    Ctx(LocalCtx<'ctx>),
+    /// A marker indicating this function is a mere proposition
+    Prop,
+    /// A marker indicating this function is irrepresentable
+    Irrep,
 }
 
 /**
@@ -156,10 +174,11 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
     /// Create a function prototype for a constant pi type
-    pub fn const_pi_prototype(&mut self, pi: &Pi) -> Result<Repr<'ctx>, Error> {
+    pub fn const_pi_prototype(&mut self, pi: &Pi) -> Result<Prototype<'ctx>, Error> {
         if pi.lifetime().depth() != 0 {
             return Err(Error::NotConst);
         }
+        let region = pi.def_region();
         let result = pi.result();
         if result.lifetime().depth() != 0 {
             return Err(Error::NotImplemented(
@@ -169,30 +188,66 @@ impl<'ctx> Codegen<'ctx> {
         let result_repr = match self.get_repr(result)? {
             Repr::Type(t) => t,
             Repr::Function(_f) => unimplemented!(),
-            Repr::Empty | Repr::Unit => return Ok(Repr::Unit),
-            Repr::Irrepresentable => return Err(Error::Irrepresentable),
+            Repr::Empty | Repr::Prop => return Ok(Prototype::Prop),
+            Repr::Irrep => return Ok(Prototype::Irrep),
         };
-        let input_reprs: Result<Vec<_>, _> = pi
-            .def_region()
-            .iter()
-            .filter_map(|ty| match self.get_repr(ty) {
-                Ok(Repr::Type(t)) => Some(Ok(t)),
-                Err(e) => Some(Err(e)),
-                _ => None,
-            })
-            .collect();
-        let input_reprs = input_reprs?;
+        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
+        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
+        const PROP_IX: isize = -1;
+        const EMPTY_IX: isize = -2;
+        const IRREP_IX: isize = -3;
 
-        // Construct our prototype
-        let result_fn = match result_repr {
-            BasicTypeEnum::ArrayType(a) => a.fn_type(&input_reprs, false),
-            BasicTypeEnum::FloatType(f) => f.fn_type(&input_reprs, false),
-            BasicTypeEnum::IntType(i) => i.fn_type(&input_reprs, false),
-            BasicTypeEnum::PointerType(p) => p.fn_type(&input_reprs, false),
-            BasicTypeEnum::StructType(s) => s.fn_type(&input_reprs, false),
-            BasicTypeEnum::VectorType(v) => v.fn_type(&input_reprs, false),
-        };
-        Ok(Repr::Function(result_fn))
+        for (i, input_ty) in region.iter().enumerate() {
+            match self.get_repr(input_ty)? {
+                Repr::Type(t) => {
+                    input_ixes.push(input_reprs.len() as isize);
+                    input_reprs.push(t);
+                }
+                Repr::Prop => {
+                    input_ixes.push(PROP_IX);
+                }
+                Repr::Empty => {
+                    input_ixes.push(EMPTY_IX);
+                }
+                Repr::Irrep => {
+                    input_ixes.push(IRREP_IX);
+                }
+            }
+        }
+
+        // Construct a function type
+        let result_ty = result_repr.fn_type(&input_reprs, false);
+
+        // Construct an empty function of a given type
+        let result_fn = self.module.add_function(
+            format!("__lambda_{}", self.counter),
+            result_ty,
+            Some(Linkage::Private),
+        );
+        self.counter += 1;
+
+        // Construct a context, binding local values to types
+        let mut ctx = LocalCtx::new(self, region.clone(), result_fn);
+        for (i, ix) in input_ixes.iter().copied().enumerate() {
+            let param = ValId::from(region.param(i).expect("Iterated index is in bounds"));
+            match ix {
+                PROP_IX => ctx.locals.insert(param, Local::Unit),
+                EMPTY_IX => ctx.locals.insert(param, Local::Contradiction),
+                IRREP_IX => ctx.locals.insert(param, Local::Irrep),
+                ix if ix >= 0 && ix < input_reprs.len() as isize => ctx.locals.insert(
+                    param,
+                    Local::Value(
+                        result_fn
+                            .get_nth_param(ix as u32)
+                            .expect("Index in vector is in bounds")
+                            .into(),
+                    ),
+                ),
+                n => panic!("Invalid representation index {}!", n),
+            }
+        }
+
+        Ok(Prototype::Ctx(ctx))
     }
 
     /// Compile a return value into a function context
@@ -239,19 +294,12 @@ impl<'ctx> Codegen<'ctx> {
         let prototype = self.const_pi_prototype(ty.deref())?;
 
         match prototype {
-            Repr::Function(fn_ty) => {
-                // Construct an empty function with the prototype
-                let fn_val = self.module.add_function(
-                    &format!("_private_lambda_{}", self.counter),
-                    fn_ty,
-                    Some(Linkage::Private),
-                );
-                let mut ctx = LocalCtx::new(self, l.def_region().clone(), fn_val);
+            Prototype::Ctx(ctx) => {
                 self.compile_retv(&mut ctx, l.result())?;
-                Ok(Const::Function(fn_val))
+                Ok(Const::Function(ctx.func))
             }
-            Repr::Unit => Ok(Const::Unit),
-            _ => Err(Error::InvalidFuncRepr),
+            Prototype::Prop => Ok(Const::Unit),
+            Prototype::Irrep => Ok(Const::Irrep),
         }
     }
 
@@ -287,10 +335,29 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    /// Compile a parameter in a local context
+    pub fn compile_parameter(
+        &mut self,
+        ctx: &mut LocalCtx<'ctx>,
+        p: &Parameter,
+    ) -> Result<Local<'ctx>, Error> {
+        ctx.locals
+            .get(&ValId::from(p.clone()))
+            .cloned()
+            .ok_or(Error::InternalError(
+                "Context should have parameters pre-registered!s",
+            ))
+    }
+
+    /// Compile a tuple in a local context
+    pub fn compile_tuple(&mut self, ctx: &mut LocalCtx<'ctx>, p: &Tuple) -> Result<Local<'ctx>, Error> {
+        unimplemented!()
+    }
+
     /// Compile a `ValueEnum` in a local context
     pub fn compile_enum(
         &mut self,
-        _ctx: &mut LocalCtx<'ctx>,
+        ctx: &mut LocalCtx<'ctx>,
         v: &ValueEnum,
     ) -> Result<Local<'ctx>, Error> {
         match v {
@@ -303,9 +370,9 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
             ValueEnum::Phi(_p) => unimplemented!(),
-            ValueEnum::Parameter(_) => unimplemented!(),
-            ValueEnum::Product(_p) => unimplemented!(),
-            ValueEnum::Tuple(_t) => unimplemented!(),
+            ValueEnum::Parameter(p) => self.compile_parameter(ctx, p),
+            ValueEnum::Product(_) => unimplemented!(),
+            ValueEnum::Tuple(t) => self.compile_tuple(ctx, t),
             ValueEnum::Sexpr(_s) => unimplemented!(),
         }
     }
