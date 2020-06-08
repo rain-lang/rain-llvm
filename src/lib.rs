@@ -13,14 +13,11 @@ use inkwell::types::{BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{
     AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
 };
-use rain_lang::value::{
-    expr::Sexpr,
-    function::{lambda::Lambda, pi::Pi},
-    lifetime::{Live, Parameter, Region},
-    primitive::logical::{self, Logical, LOGICAL_OP_TYS},
-    tuple::Tuple,
-    TypeId, ValId, ValueEnum,
-};
+use rain_lang::function::{lambda::Lambda, pi::Pi};
+use rain_lang::lifetime::Live;
+use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
+use rain_lang::region::{Parameter, Region};
+use rain_lang::value::{expr::Sexpr, tuple::Tuple, TypeId, ValId, ValueEnum};
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 
