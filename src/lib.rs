@@ -467,7 +467,11 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Result<Local<'ctx>, Error> {
         // Arity check
         let l_arity = l.arity() as usize;
-        debug_assert!(l_arity > args.len());
+        debug_assert!(
+            l_arity >= args.len(),
+            "Arity (({}).arity() = {}) must be greater or equal to than the length of the argument list ({:?}.len() = {})",
+            l, l_arity, args, args.len()
+        );
         // Partial logical evaluation check
         if l_arity != args.len() {
             unimplemented!()
@@ -602,7 +606,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Parameter(p) => self.compile_parameter(ctx, p),
             ValueEnum::Product(_) => unimplemented!(),
             ValueEnum::Tuple(t) => self.compile_tuple(ctx, t),
-            ValueEnum::Sexpr(_s) => unimplemented!(),
+            ValueEnum::Sexpr(s) => self.compile_sexpr(ctx, s),
         }
     }
 
@@ -659,7 +663,7 @@ mod tests {
         let f_name = f
             .get_name()
             .to_str()
-            .expect("Generated ame must be valid UTF-8");
+            .expect("Generated name must be valid UTF-8");
         assert_eq!(f_name, "__lambda_0");
 
         // Jit
@@ -674,7 +678,6 @@ mod tests {
         }
     }
 
-    /*
     #[test]
     fn mux_lambda_compiles_properly() {
         // Setup
@@ -700,7 +703,7 @@ mod tests {
         let f_name = f
             .get_name()
             .to_str()
-            .expect("Generated ame must be valid UTF-8");
+            .expect("Generated name must be valid UTF-8");
         assert_eq!(f_name, "__lambda_0");
 
         // Jit
@@ -708,6 +711,21 @@ mod tests {
             unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
 
         // Run
+        for select in [true, false].iter().copied() {
+            for high in [true, false].iter().copied() {
+                for low in [true, false].iter().copied() {
+                    unsafe {
+                        assert_eq!(
+                            jit_f.call(select, high, low),
+                            if select { high } else { low },
+                            "Invalid result for select = {}, high = {}, low = {}",
+                            select,
+                            high,
+                            low
+                        )
+                    }
+                }
+            }
+        }
     }
-    */
 }
