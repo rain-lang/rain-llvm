@@ -105,6 +105,20 @@ impl<'ctx> From<FunctionValue<'ctx>> for Const<'ctx> {
     }
 }
 
+impl<'ctx> From<BasicValueEnum<'ctx>> for Const<'ctx> {
+    #[inline]
+    fn from(b: BasicValueEnum<'ctx>) -> Const<'ctx> {
+        Const::Value(b.into())
+    }
+}
+
+impl<'ctx> From<IntValue<'ctx>> for Const<'ctx> {
+    #[inline]
+    fn from(i: IntValue<'ctx>) -> Const<'ctx> {
+        Const::Value(i.into())
+    }
+}
+
 /**
 A representation for a `rain` type
 */
@@ -385,14 +399,16 @@ impl<'ctx> Codegen<'ctx> {
             _ => unimplemented!(),
         }
     }
+    /// Compile a boolean
+    pub fn compile_bool(&self, b: bool) -> IntValue<'ctx> {
+        self.context.bool_type().const_int(b as u64, false)
+    }
 
     /// Get a compiled constant `rain` value or function
     pub fn compile_const_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
             ValueEnum::BoolTy(_) => Ok(Const::Unit),
-            ValueEnum::Bool(b) => Ok(Const::Value(
-                self.context.bool_type().const_int(*b as u64, false).into(),
-            )),
+            ValueEnum::Bool(b) => Ok(self.compile_bool(*b).into()),
             ValueEnum::Finite(_) => Ok(Const::Unit),
             ValueEnum::Index(_i) => unimplemented!(),
             ValueEnum::Lambda(l) => self.compile_const_lambda(l),
@@ -441,6 +457,7 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Result<Local<'ctx>, Error> {
         unimplemented!()
     }
+
     /// Compile the evaluation of a logical operation on an argument list
     pub fn compile_logical_expr(
         &mut self,
@@ -457,7 +474,7 @@ impl<'ctx> Codegen<'ctx> {
         }
         // Direct construction of constant operations
         if let Some(c) = l.get_const() {
-            unimplemented!()
+            return Ok(self.compile_bool(c).into());
         }
         // Direct construction of non-constant operations
         match l_arity {
@@ -467,7 +484,7 @@ impl<'ctx> Codegen<'ctx> {
                 let arg = self.compile(ctx, &args[0])?;
                 if l == logical::Not {
                     let arg: IntValue = arg.try_into().expect("A boolean value");
-                    return Ok(self.builder.build_not(arg, "pnot").into())
+                    return Ok(self.builder.build_not(arg, "pnot").into());
                 }
                 if l == logical::Id {
                     return Ok(arg);
@@ -516,19 +533,35 @@ impl<'ctx> Codegen<'ctx> {
         // General strategy: split and evaluate
         let true_branch = l.apply(true);
         let false_branch = l.apply(false);
-        match (true_branch, false_branch) {
-            (Either::Left(t), Either::Left(f)) => {
+        let select = self
+            .compile(ctx, &args[0])?
+            .try_into()
+            .expect("A boolean value");
+        let (high, low) = match (true_branch, false_branch) {
+            (Either::Left(high), Either::Left(low)) => {
                 // Selection between constant booleans: arity 1!
                 debug_assert_eq!(l_arity, 1);
-                unimplemented!()
+                (self.compile_bool(high), self.compile_bool(low))
             }
-            (Either::Right(t), Either::Right(f)) => {
+            (Either::Right(high), Either::Right(low)) => {
                 // Selection between function results: arity > 1
                 debug_assert!(l_arity > 1);
-                unimplemented!()
+                let high: IntValue = self
+                    .compile_logical_expr(ctx, high, &args[1..])?
+                    .try_into()
+                    .expect("A boolean value");
+                let low: IntValue = self
+                    .compile_logical_expr(ctx, low, &args[1..])?
+                    .try_into()
+                    .expect("A boolean value");
+                (high, low)
             }
             (t, f) => panic!("Branches {}, {} of {} should have the same arity!", t, f, l),
-        }
+        };
+        let is_high = self.builder.build_and(high, select, "is_high");
+        let not_select = self.builder.build_not(select, "nsel");
+        let is_low = self.builder.build_and(low, not_select, "is_low");
+        Ok(self.builder.build_or(is_high, is_low, "psplit").into())
     }
 
     /// Compile an S-expression in a local context
@@ -562,7 +595,7 @@ impl<'ctx> Codegen<'ctx> {
             | v @ ValueEnum::Index(_)
             | v @ ValueEnum::Logical(_)
             | v @ ValueEnum::Universe(_) => self.compile_const_enum(v).map(Local::from),
-            ValueEnum::Lambda(l) => unimplemented!(),
+            ValueEnum::Lambda(_l) => unimplemented!(),
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
             ValueEnum::Phi(_p) => unimplemented!(),
