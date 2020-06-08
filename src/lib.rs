@@ -10,8 +10,10 @@ use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue};
 use rain_lang::value::{
+    expr::Sexpr,
     function::{lambda::Lambda, pi::Pi},
     lifetime::{Live, Parameter, Region},
+    primitive::logical::{self, Logical, LOGICAL_OP_TYS},
     tuple::Tuple,
     TypeId, ValId, ValueEnum,
 };
@@ -60,6 +62,12 @@ pub enum Const<'ctx> {
     Contradiction,
     /// An irrepresentable value
     Irrep,
+}
+
+impl<'ctx> From<FunctionValue<'ctx>> for Const<'ctx> {
+    fn from(f: FunctionValue<'ctx>) -> Const<'ctx> {
+        Const::Function(f)
+    }
 }
 
 /**
@@ -324,6 +332,25 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    /// Compile a static-constant `rain` function
+    pub fn compile_const_constant(&mut self, _ty: &Pi, _val: &ValId) -> FunctionValue<'ctx> {
+        unimplemented!()
+    }
+
+    /// Compile a constant logical `rain` function
+    pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
+        match l.arity() {
+            1 => match l.data() {
+                0b00 => self.compile_const_constant(&LOGICAL_OP_TYS[0], &true.into()),
+                0b01 => unimplemented!(), // logical not
+                0b10 => unimplemented!(), // logical identity
+                0b11 => self.compile_const_constant(&LOGICAL_OP_TYS[1], &false.into()),
+                _ => unreachable!(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+
     /// Get a compiled constant `rain` value or function
     pub fn compile_const_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
@@ -342,6 +369,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Tuple(_t) => unimplemented!(),
             ValueEnum::Sexpr(_s) => unimplemented!(),
             ValueEnum::Universe(_) => Ok(Const::Unit),
+            ValueEnum::Logical(l) => Ok(self.compile_logical(l).into()),
         }
     }
 
@@ -366,7 +394,7 @@ impl<'ctx> Codegen<'ctx> {
             .get(&ValId::from(p.clone()))
             .cloned()
             .ok_or(Error::InternalError(
-                "Context should have parameters pre-registered!s",
+                "Context should have parameters pre-registered!",
             ))
     }
 
@@ -376,6 +404,57 @@ impl<'ctx> Codegen<'ctx> {
         _ctx: &mut LocalCtx<'ctx>,
         _p: &Tuple,
     ) -> Result<Local<'ctx>, Error> {
+        unimplemented!()
+    }
+    /// Compile the evaluation of a logical operation on an argument list
+    pub fn compile_logical_expr(
+        &mut self,
+        _ctx: &mut LocalCtx<'ctx>,
+        l: Logical,
+        args: &[ValId],
+    ) -> Result<Local<'ctx>, Error> {
+        // Arity check
+        let l_arity = l.arity() as usize;
+        debug_assert!(l_arity > args.len());
+        // Partial logical evaluation check
+        if l_arity != args.len() {
+            unimplemented!()
+        }
+        // Direct construction
+        match l_arity {
+            0 => panic!("Zero arity logical operations ({}) are invalid!", l),
+            // Unary operations
+            1 => match l.data() {
+                0b01 => unimplemented!(), // logical not
+                0b10 => unimplemented!(), // logical identity
+                _ => panic!("Invalid non-constant unary logical operation {}!", l),
+            },
+            // Builtin operations
+            2 if l == logical::And => unimplemented!(),
+            2 if l == logical::Or => unimplemented!(),
+            2 if l == logical::Xor => unimplemented!(),
+            2 if l == logical::Nand => unimplemented!(),
+            2 if l == logical::Nor => unimplemented!(),
+            2 if l == logical::Iff => unimplemented!(),
+            _ => unimplemented!(), // General strategy: split and evaluate
+        }
+    }
+
+    /// Compile an S-expression in a local context
+    pub fn compile_sexpr(
+        &mut self,
+        ctx: &mut LocalCtx<'ctx>, //TODO: this...
+        s: &Sexpr,
+    ) -> Result<Local<'ctx>, Error> {
+        if s.len() == 0 {
+            return Ok(Local::Unit);
+        }
+        match s[0].as_enum() {
+            // Special case logical operation building
+            ValueEnum::Logical(l) => return self.compile_logical_expr(ctx, *l, &s[1..]),
+            _ => {}
+        }
+        //TODO: compile s[0], etc...
         unimplemented!()
     }
 
@@ -390,8 +469,9 @@ impl<'ctx> Codegen<'ctx> {
             | v @ ValueEnum::Bool(_)
             | v @ ValueEnum::Finite(_)
             | v @ ValueEnum::Index(_)
+            | v @ ValueEnum::Logical(_)
             | v @ ValueEnum::Universe(_) => self.compile_const_enum(v).map(Local::from),
-            ValueEnum::Lambda(_l) => unimplemented!(),
+            ValueEnum::Lambda(l) => unimplemented!(),
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
             ValueEnum::Phi(_p) => unimplemented!(),
