@@ -673,4 +673,41 @@ mod tests {
             }
         }
     }
+
+    /*
+    #[test]
+    fn mux_lambda_compiles_properly() {
+        // Setup
+        let mut builder = Builder::<&str>::new();
+        let context = Context::create();
+        let module = context.create_module("mux");
+        let execution_engine = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .unwrap();
+        let mut codegen = Codegen::new(&context, module);
+
+        // ValId construction
+        let mux_p = "|select: #bool high: #bool low: #bool| (#or (#and select high) (#and (#not select) low))";
+        let (rest, mux) = builder.parse_expr(mux_p).expect("Valid lambda");
+        assert_eq!(rest, "");
+
+        // Codegen
+        let f = match codegen.compile_const(&mux).expect("Valid constant") {
+            Const::Function(f) => f,
+            r => panic!("Invalid constant generated: {:?}", r),
+        };
+
+        let f_name = f
+            .get_name()
+            .to_str()
+            .expect("Generated ame must be valid UTF-8");
+        assert_eq!(f_name, "__lambda_0");
+
+        // Jit
+        let jit_f: JitFunction<unsafe extern "C" fn(bool, bool, bool) -> bool> =
+            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+
+        // Run
+    }
+    */
 }
