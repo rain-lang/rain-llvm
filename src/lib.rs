@@ -9,7 +9,9 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicType, BasicTypeEnum, FunctionType};
-use inkwell::values::{AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue};
+use inkwell::values::{
+    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
+};
 use rain_lang::value::{
     expr::Sexpr,
     function::{lambda::Lambda, pi::Pi},
@@ -18,6 +20,7 @@ use rain_lang::value::{
     tuple::Tuple,
     TypeId, ValId, ValueEnum,
 };
+use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 
 /**
@@ -44,6 +47,37 @@ impl<'ctx> From<Const<'ctx>> for Local<'ctx> {
             Const::Unit => Local::Unit,
             Const::Contradiction => Local::Contradiction,
             Const::Irrep => Local::Irrep,
+        }
+    }
+}
+
+impl<'ctx> From<AnyValueEnum<'ctx>> for Local<'ctx> {
+    #[inline]
+    fn from(a: AnyValueEnum<'ctx>) -> Local<'ctx> {
+        Local::Value(a)
+    }
+}
+
+impl<'ctx> From<BasicValueEnum<'ctx>> for Local<'ctx> {
+    #[inline]
+    fn from(b: BasicValueEnum<'ctx>) -> Local<'ctx> {
+        Local::Value(b.into())
+    }
+}
+
+impl<'ctx> From<IntValue<'ctx>> for Local<'ctx> {
+    #[inline]
+    fn from(i: IntValue<'ctx>) -> Local<'ctx> {
+        Local::Value(i.into())
+    }
+}
+
+impl<'ctx> TryFrom<Local<'ctx>> for IntValue<'ctx> {
+    type Error = Local<'ctx>;
+    fn try_from(l: Local<'ctx>) -> Result<IntValue<'ctx>, Local<'ctx>> {
+        match l {
+            Local::Value(a) => a.try_into().map_err(|_| l),
+            _ => Err(l),
         }
     }
 }
@@ -410,7 +444,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Compile the evaluation of a logical operation on an argument list
     pub fn compile_logical_expr(
         &mut self,
-        _ctx: &mut LocalCtx<'ctx>,
+        ctx: &mut LocalCtx<'ctx>,
         l: Logical,
         args: &[ValId],
     ) -> Result<Local<'ctx>, Error> {
@@ -430,29 +464,50 @@ impl<'ctx> Codegen<'ctx> {
             0 => panic!("Zero arity logical operations ({}) are invalid!", l),
             // Unary operations
             1 => {
-                if l == logical::Not {}
-                if l == logical::Id {}
+                let arg = self.compile(ctx, &args[0])?;
+                if l == logical::Not {
+                    let arg: IntValue = arg.try_into().expect("A boolean value");
+                    return Ok(self.builder.build_not(arg, "pnot").into())
+                }
+                if l == logical::Id {
+                    return Ok(arg);
+                }
                 panic!("Invalid non-constant unary operation!")
             }
             // Binary operations
             2 => {
                 if l == logical::And {
-                    unimplemented!()
+                    let lhs: IntValue = self
+                        .compile(ctx, &args[0])?
+                        .try_into()
+                        .expect("A boolean value");
+                    let rhs: IntValue = self
+                        .compile(ctx, &args[1])?
+                        .try_into()
+                        .expect("A boolean value");
+                    return Ok(self.builder.build_and(lhs, rhs, "pand").into());
                 }
                 if l == logical::Or {
-                    unimplemented!()
+                    let lhs: IntValue = self
+                        .compile(ctx, &args[0])?
+                        .try_into()
+                        .expect("A boolean value");
+                    let rhs: IntValue = self
+                        .compile(ctx, &args[1])?
+                        .try_into()
+                        .expect("A boolean value");
+                    return Ok(self.builder.build_or(lhs, rhs, "por").into());
                 }
                 if l == logical::Xor {
-                    unimplemented!()
-                }
-                if l == logical::Nand {
-                    unimplemented!()
-                }
-                if l == logical::Nor {
-                    unimplemented!()
-                }
-                if l == logical::Iff {
-                    unimplemented!()
+                    let lhs: IntValue = self
+                        .compile(ctx, &args[0])?
+                        .try_into()
+                        .expect("A boolean value");
+                    let rhs: IntValue = self
+                        .compile(ctx, &args[1])?
+                        .try_into()
+                        .expect("A boolean value");
+                    return Ok(self.builder.build_xor(lhs, rhs, "pxor").into());
                 }
                 // Go to general strategy: split and evaluate
             }
@@ -463,11 +518,13 @@ impl<'ctx> Codegen<'ctx> {
         let false_branch = l.apply(false);
         match (true_branch, false_branch) {
             (Either::Left(t), Either::Left(f)) => {
-                // Selection between constant booleans
+                // Selection between constant booleans: arity 1!
+                debug_assert_eq!(l_arity, 1);
                 unimplemented!()
             }
             (Either::Right(t), Either::Right(f)) => {
-                // Selection between function results
+                // Selection between function results: arity > 1
+                debug_assert!(l_arity > 1);
                 unimplemented!()
             }
             (t, f) => panic!("Branches {}, {} of {} should have the same arity!", t, f, l),
