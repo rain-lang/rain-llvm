@@ -3,6 +3,7 @@
 */
 #![forbid(missing_docs, missing_debug_implementations)]
 
+use either::Either;
 use fxhash::FxHashMap as HashMap;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -420,23 +421,56 @@ impl<'ctx> Codegen<'ctx> {
         if l_arity != args.len() {
             unimplemented!()
         }
-        // Direct construction
+        // Direct construction of constant operations
+        if let Some(c) = l.get_const() {
+            unimplemented!()
+        }
+        // Direct construction of non-constant operations
         match l_arity {
             0 => panic!("Zero arity logical operations ({}) are invalid!", l),
             // Unary operations
-            1 => match l.data() {
-                0b01 => unimplemented!(), // logical not
-                0b10 => unimplemented!(), // logical identity
-                _ => panic!("Invalid non-constant unary logical operation {}!", l),
-            },
-            // Builtin operations
-            2 if l == logical::And => unimplemented!(),
-            2 if l == logical::Or => unimplemented!(),
-            2 if l == logical::Xor => unimplemented!(),
-            2 if l == logical::Nand => unimplemented!(),
-            2 if l == logical::Nor => unimplemented!(),
-            2 if l == logical::Iff => unimplemented!(),
-            _ => unimplemented!(), // General strategy: split and evaluate
+            1 => {
+                if l == logical::Not {}
+                if l == logical::Id {}
+                panic!("Invalid non-constant unary operation!")
+            }
+            // Binary operations
+            2 => {
+                if l == logical::And {
+                    unimplemented!()
+                }
+                if l == logical::Or {
+                    unimplemented!()
+                }
+                if l == logical::Xor {
+                    unimplemented!()
+                }
+                if l == logical::Nand {
+                    unimplemented!()
+                }
+                if l == logical::Nor {
+                    unimplemented!()
+                }
+                if l == logical::Iff {
+                    unimplemented!()
+                }
+                // Go to general strategy: split and evaluate
+            }
+            _ => {} // Go to general strategy: split and evaluate
+        }
+        // General strategy: split and evaluate
+        let true_branch = l.apply(true);
+        let false_branch = l.apply(false);
+        match (true_branch, false_branch) {
+            (Either::Left(t), Either::Left(f)) => {
+                // Selection between constant booleans
+                unimplemented!()
+            }
+            (Either::Right(t), Either::Right(f)) => {
+                // Selection between function results
+                unimplemented!()
+            }
+            (t, f) => panic!("Branches {}, {} of {} should have the same arity!", t, f, l),
         }
     }
 

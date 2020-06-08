@@ -7,4 +7,5 @@ edition = "2018"
 [dependencies]
 rain-lang = { git = "https://gitlab.com/tekne/rain.git" }
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm10-0" }
-fxhash = "0.2.1"
+fxhash = "0.2"
+either = "1.5"
