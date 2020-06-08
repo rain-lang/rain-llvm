@@ -5,6 +5,7 @@
 
 use either::Either;
 use fxhash::FxHashMap as HashMap;
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
@@ -158,22 +159,41 @@ pub struct LocalCtx<'ctx> {
     locals: HashMap<ValId, Local<'ctx>>,
     /// The region associated with this local context
     region: Region,
+    /// The basic block at the head of this local context
+    head: Option<BasicBlock<'ctx>>,
     /// The function for which this context is defined
     func: FunctionValue<'ctx>,
 }
 
 impl<'ctx> LocalCtx<'ctx> {
-    /// Crate a new code generation context with a given function as base
+    /// Crate a new code generation context with a given function and basic block as base
     pub fn new(
-        _codegen: &Codegen<'ctx>,
+        _codegen: &mut Codegen<'ctx>,
         region: Region,
         func: FunctionValue<'ctx>,
+        head: Option<BasicBlock<'ctx>>,
     ) -> LocalCtx<'ctx> {
         LocalCtx {
             locals: HashMap::default(),
             region,
             func,
+            head,
         }
+    }
+    /// Get the head of this function. If this function has no head, generate an entry block
+    pub fn get_head(&mut self, codegen: &mut Codegen<'ctx>) -> BasicBlock<'ctx> {
+        if let Some(head) = self.head {
+            return head;
+        }
+        let head = codegen.context.append_basic_block(self.func, "entry");
+        self.head = Some(head);
+        return head;
+    }
+    /// Place a context at the head of this function. If this function has no head, generate an
+    /// entry block.
+    pub fn to_head(&mut self, codegen: &mut Codegen<'ctx>) {
+        let head = self.get_head(codegen);
+        codegen.builder.position_at_end(head);
     }
 }
 
@@ -289,7 +309,9 @@ impl<'ctx> Codegen<'ctx> {
         self.counter += 1;
 
         // Construct a context, binding local values to types
-        let mut ctx = LocalCtx::new(self, region.clone(), result_fn);
+        let mut ctx = LocalCtx::new(self, region.clone(), result_fn, None);
+
+        // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
             let param = ValId::from(
                 region
@@ -330,8 +352,7 @@ impl<'ctx> Codegen<'ctx> {
         ctx: &mut LocalCtx<'ctx>,
         v: &ValId,
     ) -> Result<InstructionValue<'ctx>, Error> {
-        let basic_block = self.context.append_basic_block(ctx.func, "entry");
-        self.builder.position_at_end(basic_block);
+        ctx.to_head(self);
         let retv = self.compile(ctx, v)?;
         let undef_retv: Option<BasicValueEnum> = match retv {
             Local::Unit | Local::Contradiction => {
