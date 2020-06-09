@@ -14,7 +14,7 @@ use inkwell::values::{
     AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
 };
 use rain_lang::function::{lambda::Lambda, pi::Pi};
-use rain_lang::lifetime::Live;
+use rain_lang::region::Regional;
 use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
 use rain_lang::region::{Parameter, Region};
 use rain_lang::value::{expr::Sexpr, tuple::Tuple, TypeId, ValId, ValueEnum};
@@ -253,12 +253,12 @@ impl<'ctx> Codegen<'ctx> {
     }
     /// Create a function prototype for a constant pi type
     pub fn const_pi_prototype(&mut self, pi: &Pi) -> Result<Prototype<'ctx>, Error> {
-        if pi.lifetime().depth() != 0 {
+        if pi.depth() != 0 {
             return Err(Error::NotConst);
         }
         let region = pi.def_region();
         let result = pi.result();
-        if result.lifetime().depth() != 0 {
+        if result.depth() != 0 {
             return Err(Error::NotImplemented(
                 "Non-constant return types for pi functions",
             ));
@@ -638,7 +638,7 @@ impl<'ctx> Codegen<'ctx> {
             return Err(Error::NotImplemented("Nested region ValId compilation"));
         }
         // Constant regions are constants
-        if v.lifetime().depth() == 0 {
+        if v.depth() == 0 {
             return self.compile_const(v).map(Local::from);
         } else if let Some(l) = ctx.locals.get(v) {
             // Check the local cache
