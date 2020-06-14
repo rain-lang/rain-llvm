@@ -343,14 +343,14 @@ impl<'ctx> Codegen<'ctx> {
         Ok(Prototype::Ctx(ctx))
     }
 
-    /// Compile a return value into a function context
-    pub fn compile_retv(
+    /// Build a return value into a function context
+    pub fn build_retv(
         &mut self,
         ctx: &mut LocalCtx<'ctx>,
         v: &ValId,
     ) -> Result<InstructionValue<'ctx>, Error> {
         ctx.to_head(self);
-        let retv = self.compile(ctx, v)?;
+        let retv = self.build(ctx, v)?;
         let undef_retv: Option<BasicValueEnum> = match retv {
             Local::Unit | Local::Contradiction => {
                 ctx.func.get_type().get_return_type().map(|ty| match ty {
@@ -385,13 +385,13 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Compile a constant `rain` lambda function
-    pub fn compile_const_lambda(&mut self, l: &Lambda) -> Result<Const<'ctx>, Error> {
+    pub fn compile_lambda(&mut self, l: &Lambda) -> Result<Const<'ctx>, Error> {
         let ty = l.get_ty();
         let prototype = self.const_pi_prototype(ty.deref())?;
 
         match prototype {
             Prototype::Ctx(mut ctx) => {
-                self.compile_retv(&mut ctx, l.result())?;
+                self.build_retv(&mut ctx, l.result())?;
                 Ok(Const::Function(ctx.func))
             }
             Prototype::Prop => Ok(Const::Unit),
@@ -400,7 +400,7 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Compile a static-constant `rain` function
-    pub fn compile_const_constant(&mut self, _ty: &Pi, _val: &ValId) -> FunctionValue<'ctx> {
+    pub fn compile_constant(&mut self, _ty: &Pi, _val: &ValId) -> FunctionValue<'ctx> {
         unimplemented!()
     }
 
@@ -408,10 +408,10 @@ impl<'ctx> Codegen<'ctx> {
     pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
         match l.arity() {
             1 => match l.data() {
-                0b00 => self.compile_const_constant(&LOGICAL_OP_TYS[0], &true.into()),
+                0b00 => self.compile_constant(&LOGICAL_OP_TYS[0], &true.into()),
                 0b01 => unimplemented!(), // logical not
                 0b10 => unimplemented!(), // logical identity
-                0b11 => self.compile_const_constant(&LOGICAL_OP_TYS[1], &false.into()),
+                0b11 => self.compile_constant(&LOGICAL_OP_TYS[1], &false.into()),
                 _ => unreachable!(),
             },
             _ => unimplemented!(),
@@ -423,13 +423,13 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Get a compiled constant `rain` value or function
-    pub fn compile_const_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
+    pub fn compile_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
             ValueEnum::BoolTy(_) => Ok(Const::Unit),
             ValueEnum::Bool(b) => Ok(self.compile_bool(*b).into()),
             ValueEnum::Finite(_) => Ok(Const::Unit),
             ValueEnum::Index(_i) => unimplemented!(),
-            ValueEnum::Lambda(l) => self.compile_const_lambda(l),
+            ValueEnum::Lambda(l) => self.compile_lambda(l),
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
             ValueEnum::Phi(_p) => unimplemented!(),
@@ -447,14 +447,14 @@ impl<'ctx> Codegen<'ctx> {
         if let Some(c) = self.consts.get(v) {
             Ok(*c)
         } else {
-            let c = self.compile_const_enum(v.as_enum())?;
+            let c = self.compile_enum(v.as_enum())?;
             self.consts.insert(v.clone(), c);
             Ok(c)
         }
     }
 
-    /// Compile a parameter in a local context
-    pub fn compile_parameter(
+    /// Build a parameter in a local context
+    pub fn build_parameter(
         &mut self,
         ctx: &mut LocalCtx<'ctx>,
         p: &Parameter,
@@ -467,8 +467,8 @@ impl<'ctx> Codegen<'ctx> {
             ))
     }
 
-    /// Compile a tuple in a local context
-    pub fn compile_tuple(
+    /// Build a tuple in a local context
+    pub fn build_tuple(
         &mut self,
         _ctx: &mut LocalCtx<'ctx>,
         _p: &Tuple,
@@ -476,8 +476,8 @@ impl<'ctx> Codegen<'ctx> {
         unimplemented!()
     }
 
-    /// Compile the evaluation of a logical operation on an argument list
-    pub fn compile_logical_expr(
+    /// Build the evaluation of a logical operation on an argument list
+    pub fn build_logical_expr(
         &mut self,
         ctx: &mut LocalCtx<'ctx>,
         l: Logical,
@@ -503,7 +503,7 @@ impl<'ctx> Codegen<'ctx> {
             0 => panic!("Zero arity logical operations ({}) are invalid!", l),
             // Unary operations
             1 => {
-                let arg = self.compile(ctx, &args[0])?;
+                let arg = self.build(ctx, &args[0])?;
                 if l == logical::Not {
                     let arg: IntValue = arg.try_into().expect("A boolean value");
                     return Ok(self.builder.build_not(arg, "pnot").into());
@@ -517,33 +517,33 @@ impl<'ctx> Codegen<'ctx> {
             2 => {
                 if l == logical::And {
                     let lhs: IntValue = self
-                        .compile(ctx, &args[0])?
+                        .build(ctx, &args[0])?
                         .try_into()
                         .expect("A boolean value");
                     let rhs: IntValue = self
-                        .compile(ctx, &args[1])?
+                        .build(ctx, &args[1])?
                         .try_into()
                         .expect("A boolean value");
                     return Ok(self.builder.build_and(lhs, rhs, "pand").into());
                 }
                 if l == logical::Or {
                     let lhs: IntValue = self
-                        .compile(ctx, &args[0])?
+                        .build(ctx, &args[0])?
                         .try_into()
                         .expect("A boolean value");
                     let rhs: IntValue = self
-                        .compile(ctx, &args[1])?
+                        .build(ctx, &args[1])?
                         .try_into()
                         .expect("A boolean value");
                     return Ok(self.builder.build_or(lhs, rhs, "por").into());
                 }
                 if l == logical::Xor {
                     let lhs: IntValue = self
-                        .compile(ctx, &args[0])?
+                        .build(ctx, &args[0])?
                         .try_into()
                         .expect("A boolean value");
                     let rhs: IntValue = self
-                        .compile(ctx, &args[1])?
+                        .build(ctx, &args[1])?
                         .try_into()
                         .expect("A boolean value");
                     return Ok(self.builder.build_xor(lhs, rhs, "pxor").into());
@@ -556,7 +556,7 @@ impl<'ctx> Codegen<'ctx> {
         let true_branch = l.apply(true);
         let false_branch = l.apply(false);
         let select = self
-            .compile(ctx, &args[0])?
+            .build(ctx, &args[0])?
             .try_into()
             .expect("A boolean value");
         let (high, low) = match (true_branch, false_branch) {
@@ -569,11 +569,11 @@ impl<'ctx> Codegen<'ctx> {
                 // Selection between function results: arity > 1
                 debug_assert!(l_arity > 1);
                 let high: IntValue = self
-                    .compile_logical_expr(ctx, high, &args[1..])?
+                    .build_logical_expr(ctx, high, &args[1..])?
                     .try_into()
                     .expect("A boolean value");
                 let low: IntValue = self
-                    .compile_logical_expr(ctx, low, &args[1..])?
+                    .build_logical_expr(ctx, low, &args[1..])?
                     .try_into()
                     .expect("A boolean value");
                 (high, low)
@@ -586,8 +586,8 @@ impl<'ctx> Codegen<'ctx> {
         Ok(self.builder.build_or(is_high, is_low, "psplit").into())
     }
 
-    /// Compile an S-expression in a local context
-    pub fn compile_sexpr(
+    /// Build an S-expression in a local context
+    pub fn build_sexpr(
         &mut self,
         ctx: &mut LocalCtx<'ctx>, //TODO: this...
         s: &Sexpr,
@@ -597,15 +597,15 @@ impl<'ctx> Codegen<'ctx> {
         }
         match s[0].as_enum() {
             // Special case logical operation building
-            ValueEnum::Logical(l) => return self.compile_logical_expr(ctx, *l, &s[1..]),
+            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, &s[1..]),
             _ => {}
         }
-        //TODO: compile s[0], etc...
+        //TODO: build s[0], etc...
         unimplemented!()
     }
 
-    /// Compile a `ValueEnum` in a local context
-    pub fn compile_enum(
+    /// Build a `ValueEnum` in a local context
+    pub fn build_enum(
         &mut self,
         ctx: &mut LocalCtx<'ctx>,
         v: &ValueEnum,
@@ -616,20 +616,20 @@ impl<'ctx> Codegen<'ctx> {
             | v @ ValueEnum::Finite(_)
             | v @ ValueEnum::Index(_)
             | v @ ValueEnum::Logical(_)
-            | v @ ValueEnum::Universe(_) => self.compile_const_enum(v).map(Local::from),
+            | v @ ValueEnum::Universe(_) => self.compile_enum(v).map(Local::from),
             ValueEnum::Lambda(_l) => unimplemented!(),
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
             ValueEnum::Phi(_p) => unimplemented!(),
-            ValueEnum::Parameter(p) => self.compile_parameter(ctx, p),
+            ValueEnum::Parameter(p) => self.build_parameter(ctx, p),
             ValueEnum::Product(_) => unimplemented!(),
-            ValueEnum::Tuple(t) => self.compile_tuple(ctx, t),
-            ValueEnum::Sexpr(s) => self.compile_sexpr(ctx, s),
+            ValueEnum::Tuple(t) => self.build_tuple(ctx, t),
+            ValueEnum::Sexpr(s) => self.build_sexpr(ctx, s),
         }
     }
 
-    /// Compile a `ValId` in a local context
-    pub fn compile(&mut self, ctx: &mut LocalCtx<'ctx>, v: &ValId) -> Result<Local<'ctx>, Error> {
+    /// Build a `ValId` in a local context
+    pub fn build(&mut self, ctx: &mut LocalCtx<'ctx>, v: &ValId) -> Result<Local<'ctx>, Error> {
         // NOTE: compiling a constant never leaves the builder, and we do not implemented nested regions currently.
         // Hence, we work with the (bad) assumption that we never have to worry about the builder jumping around because
         // any serialization respecting dependency order is a valid serialization. Note we *also* ignore lifetime order,
@@ -644,7 +644,7 @@ impl<'ctx> Codegen<'ctx> {
             // Check the local cache
             return Ok(*l);
         }
-        let result = self.compile_enum(ctx, v.as_enum())?;
+        let result = self.build_enum(ctx, v.as_enum())?;
         ctx.locals.insert(v.clone(), result);
         Ok(result)
     }
