@@ -30,8 +30,8 @@
 
 
 before_script:
-    - apt-get update -yqq
-    - apt-get install llvm llvm-dev
+    - apt-get -y update -yqq
+    - apt-get -y install llvm llvm-dev
     - export CARGO_HOME=.cargo-cache
     - rustc --version
     - cargo --version
