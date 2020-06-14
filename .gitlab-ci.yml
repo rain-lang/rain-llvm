@@ -31,7 +31,7 @@
 
 before_script:
     - apt-get -y update -yqq
-    - apt-get -y install llvm llvm-dev
+    - bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
     - export CARGO_HOME=.cargo-cache
     - rustc --version
     - cargo --version
