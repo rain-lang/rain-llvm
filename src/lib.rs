@@ -597,7 +597,7 @@ impl<'ctx> Codegen<'ctx> {
         }
         match s[0].as_enum() {
             // Special case logical operation building
-            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, &s[1..]),
+            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, &s.as_slice()[1..]),
             _ => {}
         }
         //TODO: build s[0], etc...
