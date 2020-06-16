@@ -16,6 +16,7 @@ use inkwell::values::{
 use rain_lang::function::{lambda::Lambda, pi::Pi};
 use rain_lang::region::Regional;
 use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
+use rain_lang::primitive::finite::Finite;
 use rain_lang::region::{Parameter, Region};
 use rain_lang::value::{expr::Sexpr, tuple::Tuple, TypeId, ValId, ValueEnum};
 use std::convert::{TryFrom, TryInto};
@@ -248,6 +249,7 @@ impl<'ctx> Codegen<'ctx> {
         //TODO: caching, `Entry`, etc...
         match t.as_enum() {
             ValueEnum::BoolTy(_) => Ok(Repr::Type(self.context.bool_type().into())),
+            ValueEnum::Finite(f) => Ok(self.compile_finite(f)),
             _ => unimplemented!(),
         }
     }
@@ -420,6 +422,28 @@ impl<'ctx> Codegen<'ctx> {
     /// Compile a boolean
     pub fn compile_bool(&self, b: bool) -> IntValue<'ctx> {
         self.context.bool_type().const_int(b as u64, false)
+    }
+
+    /// Compile a finite
+    pub fn compile_finite(&mut self, f: &Finite) -> Repr<'ctx> {
+        let value: u128 = f.0;
+        if value == 0 {
+            Repr::Irrep
+        } else if value == 1 {
+            Repr::Prop
+        } else if value == 2 {
+            Repr::Type(self.context.bool_type().into())
+        } else if value < (1 << 8) {
+            Repr::Type(self.context.i8_type().into())
+        } else if value < (1 << 16) {
+            Repr::Type(self.context.i16_type().into())
+        } else if value < (1 << 32) {
+            Repr::Type(self.context.i32_type().into())
+        } else if value < (1 << 64) {
+            Repr::Type(self.context.i64_type().into())
+        } else {
+            Repr::Type(self.context.i128_type().into())
+        }
     }
 
     /// Get a compiled constant `rain` value or function
