@@ -16,7 +16,7 @@ use inkwell::values::{
 use rain_lang::function::{lambda::Lambda, pi::Pi};
 use rain_lang::region::Regional;
 use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
-use rain_lang::primitive::finite::Finite;
+use rain_lang::primitive::finite::{Finite, Index};
 use rain_lang::region::{Parameter, Region};
 use rain_lang::value::{expr::Sexpr, tuple::Tuple, TypeId, ValId, ValueEnum};
 use std::convert::{TryFrom, TryInto};
@@ -446,13 +446,45 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    /// Compile an index
+    pub fn compile_index(&mut self, i: &Index) -> Const<'ctx> {
+        let type_bound = (*i.get_ty()).0;
+        if type_bound == 0 {
+            panic!("Error: Unable to compile index of type Finite(0)");
+        }
+        let this_value = i.ix();
+        if type_bound <= this_value {
+            panic!("Index({}) is not a valid instance of Finite({})", 
+            this_value, type_bound);
+        } else {
+            if this_value == 1 {
+                Const::Unit
+            } else if this_value == 2 {
+                self.context.bool_type().const_int(this_value as u64, false).into()
+            } else if this_value < (1 << 8) {
+                self.context.i8_type().const_int(this_value as u64, false).into()
+            } else if this_value < (1 << 16) {
+                self.context.i16_type().const_int(this_value as u64, false).into()
+            } else if this_value < (1 << 32) {
+                self.context.i32_type().const_int(this_value as u64, false).into()
+            } else if this_value < (1 << 64) {
+                self.context.i64_type().const_int(this_value as u64, false).into()
+            } else {
+                self.context.i128_type().const_int_arbitrary_precision(
+                    &[(this_value >> 64) as u64, this_value as u64]
+                ).into()
+            }
+        }
+
+    }
+
     /// Get a compiled constant `rain` value or function
     pub fn compile_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
             ValueEnum::BoolTy(_) => Ok(Const::Unit),
             ValueEnum::Bool(b) => Ok(self.compile_bool(*b).into()),
             ValueEnum::Finite(_) => Ok(Const::Unit),
-            ValueEnum::Index(_i) => unimplemented!(),
+            ValueEnum::Index(_i) => Ok(self.compile_index(_i)),
             ValueEnum::Lambda(l) => self.compile_lambda(l),
             ValueEnum::Pi(_p) => unimplemented!(),
             ValueEnum::Gamma(_g) => unimplemented!(),
@@ -768,6 +800,56 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn identity_finite_and_index_compiles_properly() {
+        // Setup
+        let mut builder = Builder::<&str>::new();
+        let context = Context::create();
+        let module = context.create_module("identity_bool");
+        let execution_engine = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .unwrap();
+        let mut codegen = Codegen::new(&context, module);
+
+        // ValId construction
+        let (rest, id) = builder.parse_expr("|x: #finite(6)| x").expect("Valid lambda");
+        assert_eq!(rest, "");
+
+        // Codegen
+        let f = match codegen.compile_const(&id).expect("Valid constant") {
+            Const::Function(f) => f,
+            r => panic!("Invalid constant generated: {:?}", r),
+        };
+
+        let f_name = f
+            .get_name()
+            .to_str()
+            .expect("Generated name must be valid UTF-8");
+        assert_eq!(f_name, "__lambda_0");
+
+        let (rest, id) = builder.parse_expr("#ix(6)[4]").expect("Valid Index Instance");
+        assert_eq!(rest, "");
+
+        let val = match codegen.compile_const(&id).expect("Valid Constant") {
+            Const::Value(i) => i,
+            r => panic!("Invalid constant generated {:?}", r),
+        };
+        let int_val = match val {
+            BasicValueEnum::IntValue(i) => i,
+            _ => panic!("Wrong type: expect u8 for ix(6)[4]"),
+        };
+        assert_eq!(int_val.get_type().get_bit_width(), 8);
+        
+        // Jit
+        let jit_f: JitFunction<unsafe extern "C" fn(u8) -> u8> =
+            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+
+        // Run
+        unsafe {
+            assert_eq!(jit_f.call(4 as u8), 4);
         }
     }
 }
