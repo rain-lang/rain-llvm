@@ -457,17 +457,17 @@ impl<'ctx> Codegen<'ctx> {
             panic!("Index({}) is not a valid instance of Finite({})", 
             this_value, type_bound);
         } else {
-            if this_value == 1 {
+            if type_bound == 1 {
                 Const::Unit
-            } else if this_value == 2 {
+            } else if type_bound == 2 {
                 self.context.bool_type().const_int(this_value as u64, false).into()
-            } else if this_value < (1 << 8) {
+            } else if type_bound < (1 << 8) {
                 self.context.i8_type().const_int(this_value as u64, false).into()
-            } else if this_value < (1 << 16) {
+            } else if type_bound < (1 << 16) {
                 self.context.i16_type().const_int(this_value as u64, false).into()
-            } else if this_value < (1 << 32) {
+            } else if type_bound < (1 << 32) {
                 self.context.i32_type().const_int(this_value as u64, false).into()
-            } else if this_value < (1 << 64) {
+            } else if type_bound < (1 << 64) {
                 self.context.i64_type().const_int(this_value as u64, false).into()
             } else {
                 self.context.i128_type().const_int_arbitrary_precision(
@@ -842,6 +842,19 @@ mod tests {
             _ => panic!("Wrong type: expect u8 for ix(6)[4]"),
         };
         assert_eq!(int_val.get_type().get_bit_width(), 8);
+
+        let (rest, id) = builder.parse_expr("#ix(512)[4]").expect("Valid Index Instance");
+        assert_eq!(rest, "");
+
+        let val = match codegen.compile_const(&id).expect("Valid Constant") {
+            Const::Value(i) => i,
+            r => panic!("Invalid constant generated {:?}", r),
+        };
+        let int_val = match val {
+            BasicValueEnum::IntValue(i) => i,
+            _ => panic!("Wrong type: expect u16 for ix(512)[4]"),
+        };
+        assert_eq!(int_val.get_type().get_bit_width(), 16);
         
         // Jit
         let jit_f: JitFunction<unsafe extern "C" fn(u8) -> u8> =
