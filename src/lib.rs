@@ -428,7 +428,7 @@ impl<'ctx> Codegen<'ctx> {
     pub fn compile_finite(&mut self, f: &Finite) -> Repr<'ctx> {
         let value: u128 = f.0;
         if value == 0 {
-            Repr::Irrep
+            Repr::Empty
         } else if value == 1 {
             Repr::Prop
         } else if value == 2 {
