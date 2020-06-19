@@ -9,16 +9,21 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicType, BasicTypeEnum, FunctionType};
+use inkwell::types::{BasicType, BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{
     AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
 };
+use inkwell::AddressSpace;
 use rain_lang::function::{lambda::Lambda, pi::Pi};
-use rain_lang::region::Regional;
-use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
 use rain_lang::primitive::finite::{Finite, Index};
+use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
+use rain_lang::region::Regional;
 use rain_lang::region::{Parameter, Region};
-use rain_lang::value::{expr::Sexpr, tuple::Tuple, TypeId, ValId, ValueEnum};
+use rain_lang::value::{
+    expr::Sexpr,
+    tuple::{Product, Tuple},
+    TypeId, ValId, ValueEnum,
+};
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 
@@ -119,14 +124,28 @@ impl<'ctx> From<IntValue<'ctx>> for Const<'ctx> {
 }
 
 /**
+A representation of product
+*/
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductRepr<'ctx> {
+    /// A mapping since we need to skip Repr::Unit
+    /// mapping[i] hold the position of ith element in the struct
+    pub mapping: Vec<Option<u32>>,
+    /// The actual representation
+    pub repr: StructType<'ctx>,
+}
+
+/**
 A representation for a `rain` type
 */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Repr<'ctx> {
     /// As a basic LLVM type
     Type(BasicTypeEnum<'ctx>),
     /// As a function
     Function(FunctionType<'ctx>),
+    /// As a compound
+    Product(ProductRepr<'ctx>),
     /// As a mere proposition
     Prop,
     /// As the empty type
@@ -250,6 +269,7 @@ impl<'ctx> Codegen<'ctx> {
         match t.as_enum() {
             ValueEnum::BoolTy(_) => Ok(Repr::Type(self.context.bool_type().into())),
             ValueEnum::Finite(f) => Ok(self.compile_finite(f)),
+            ValueEnum::Product(p) => self.compile_product(p),
             _ => unimplemented!(),
         }
     }
@@ -270,6 +290,7 @@ impl<'ctx> Codegen<'ctx> {
             Repr::Function(_f) => unimplemented!(),
             Repr::Empty | Repr::Prop => return Ok(Prototype::Prop),
             Repr::Irrep => return Ok(Prototype::Irrep),
+            Repr::Product(p) => p.repr.into(),
         };
         let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
         let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
@@ -293,6 +314,10 @@ impl<'ctx> Codegen<'ctx> {
                 Repr::Irrep => {
                     input_ixes.push(IRREP_IX);
                 }
+                Repr::Product(p) => {
+                    input_ixes.push(input_reprs.len() as isize);
+                    input_reprs.push(p.repr.into());
+                },
             }
         }
 
@@ -454,28 +479,92 @@ impl<'ctx> Codegen<'ctx> {
         }
         let this_value = i.ix();
         if type_bound <= this_value {
-            panic!("Index({}) is not a valid instance of Finite({})", 
-            this_value, type_bound);
+            panic!(
+                "Index({}) is not a valid instance of Finite({})",
+                this_value, type_bound
+            );
         } else {
             if type_bound == 1 {
                 Const::Unit
             } else if type_bound == 2 {
-                self.context.bool_type().const_int(this_value as u64, false).into()
+                self.context
+                    .bool_type()
+                    .const_int(this_value as u64, false)
+                    .into()
             } else if type_bound < (1 << 8) {
-                self.context.i8_type().const_int(this_value as u64, false).into()
+                self.context
+                    .i8_type()
+                    .const_int(this_value as u64, false)
+                    .into()
             } else if type_bound < (1 << 16) {
-                self.context.i16_type().const_int(this_value as u64, false).into()
+                self.context
+                    .i16_type()
+                    .const_int(this_value as u64, false)
+                    .into()
             } else if type_bound < (1 << 32) {
-                self.context.i32_type().const_int(this_value as u64, false).into()
+                self.context
+                    .i32_type()
+                    .const_int(this_value as u64, false)
+                    .into()
             } else if type_bound < (1 << 64) {
-                self.context.i64_type().const_int(this_value as u64, false).into()
+                self.context
+                    .i64_type()
+                    .const_int(this_value as u64, false)
+                    .into()
             } else {
-                self.context.i128_type().const_int_arbitrary_precision(
-                    &[(this_value >> 64) as u64, this_value as u64]
-                ).into()
+                self.context
+                    .i128_type()
+                    .const_int_arbitrary_precision(&[(this_value >> 64) as u64, this_value as u64])
+                    .into()
             }
         }
+    }
 
+    /// Compile a product
+    pub fn compile_product(&mut self, p: &Product) -> Result<Repr<'ctx>, Error> {
+        let mut mapping: Vec<Option<u32>> = Vec::new();
+        let mut struct_index = 0;
+        let mut repr_vec: Vec<BasicTypeEnum<'ctx>> = Vec::new();
+        let mut reprs = p.iter().map(|ty| self.get_repr(ty));
+        while let Some(repr) = reprs.next() {
+            let repr = repr?;
+            match repr {
+                Repr::Type(ty) => {
+                    repr_vec.push(ty);
+                    mapping.push(Some(struct_index));
+                    struct_index += 1;
+                }
+                Repr::Function(f) => {
+                    repr_vec.push(f.ptr_type(AddressSpace::Global).into());
+                    mapping.push(Some(struct_index));
+                    struct_index += 1;
+                }
+                Repr::Empty => return Ok(Repr::Empty),
+                Repr::Irrep => {
+                    let mut return_empty = false;
+                    while let Some(r) = reprs.next() {
+                        if r? == Repr::Empty {
+                            return_empty = true;
+                        }
+                    }
+                    if return_empty {
+                        return Ok(Repr::Empty);
+                    }
+                }
+                Repr::Prop => mapping.push(None),
+                Repr::Product(p) => {
+                    repr_vec.push(p.repr.into());
+                    mapping.push(Some(struct_index));
+                    struct_index += 1;
+                }
+            }
+        }
+        if struct_index == 0 {
+            Ok(Repr::Empty)
+        } else {
+            let repr = self.context.struct_type(&repr_vec[..], false);
+            Ok(Repr::Product(ProductRepr { mapping, repr }))
+        }
     }
 
     /// Get a compiled constant `rain` value or function
@@ -815,7 +904,9 @@ mod tests {
         let mut codegen = Codegen::new(&context, module);
 
         // ValId construction
-        let (rest, id) = builder.parse_expr("|x: #finite(6)| x").expect("Valid lambda");
+        let (rest, id) = builder
+            .parse_expr("|x: #finite(6)| x")
+            .expect("Valid lambda");
         assert_eq!(rest, "");
 
         // Codegen
@@ -830,7 +921,9 @@ mod tests {
             .expect("Generated name must be valid UTF-8");
         assert_eq!(f_name, "__lambda_0");
 
-        let (rest, id) = builder.parse_expr("#ix(6)[4]").expect("Valid Index Instance");
+        let (rest, id) = builder
+            .parse_expr("#ix(6)[4]")
+            .expect("Valid Index Instance");
         assert_eq!(rest, "");
 
         let val = match codegen.compile_const(&id).expect("Valid Constant") {
@@ -843,7 +936,9 @@ mod tests {
         };
         assert_eq!(int_val.get_type().get_bit_width(), 8);
 
-        let (rest, id) = builder.parse_expr("#ix(512)[4]").expect("Valid Index Instance");
+        let (rest, id) = builder
+            .parse_expr("#ix(512)[4]")
+            .expect("Valid Index Instance");
         assert_eq!(rest, "");
 
         let val = match codegen.compile_const(&id).expect("Valid Constant") {
@@ -855,7 +950,6 @@ mod tests {
             _ => panic!("Wrong type: expect u16 for ix(512)[4]"),
         };
         assert_eq!(int_val.get_type().get_bit_width(), 16);
-        
         // Jit
         let jit_f: JitFunction<unsafe extern "C" fn(u8) -> u8> =
             unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
@@ -864,5 +958,70 @@ mod tests {
         unsafe {
             assert_eq!(jit_f.call(4 as u8), 4);
         }
+    }
+
+    #[test]
+    fn identity_product_properly() {
+        // Setup
+        let mut builder = Builder::<&str>::new();
+        let context = Context::create();
+        let module = context.create_module("identity_bool");
+        /*
+        let execution_engine = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .unwrap();
+        */
+        let mut codegen = Codegen::new(&context, module);
+
+        // ValId construction
+        let (rest, id) = builder
+            .parse_expr("|x: #product[#bool #bool]| x")
+            .expect("Valid lambda");
+        assert_eq!(rest, "");
+
+        // Codegen
+        let f = match codegen.compile_const(&id).expect("Valid constant") {
+            Const::Function(f) => f,
+            r => panic!("Invalid constant generated: {:?}", r),
+        };
+
+        //f.print_to_stderr();
+
+        let f_name = f
+            .get_name()
+            .to_str()
+            .expect("Generated name must be valid UTF-8");
+        assert_eq!(f_name, "__lambda_0");
+
+        //TODO: determine FFI
+        /*
+
+        #[repr(transparent)]
+        #[derive(Debug, Copy, Clone)]
+        struct BoolFFITuple([u8; 2]);
+
+        impl PartialEq for BoolFFITuple {
+            fn eq(&self, other: &BoolFFITuple) -> bool {
+                (self.0[0] == 0) == (other.0[0] == 0) && (self.0[1] == 0) == (other.0[1] == 0)
+            }
+        }
+
+        // Jit
+        let jit_f: JitFunction<unsafe extern "C" fn(BoolFFITuple) -> BoolFFITuple> =
+            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+
+        // Run
+        for l in [0, 1].iter().copied() {
+            for r in [0, 1].iter().copied() {
+                let t = BoolFFITuple([l, r]);
+                unsafe {
+                    assert_eq!(
+                        jit_f.call(t),
+                        t
+                    );
+                }
+            }
+        }
+        */
     }
 }
