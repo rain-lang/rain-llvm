@@ -26,6 +26,7 @@ use rain_lang::value::{
 };
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
+use rain_lang::typing::Typed;
 
 /**
 A local `rain` value
@@ -567,6 +568,28 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    /// Compile a tuple
+    // pub fn compile_tuple(&mut self, t: &Tuple) -> Result<Const<'ctx>, Error> {
+    //     // let p = t.ty().clone_ty().as_enum();
+    //     // match p {
+    //     //     ValueEnum::Product(product) => {
+    //     //         let repr = match self.compile_product(product)? {
+    //     //             Repr::Product(tmp) => tmp,
+    //     //             _ => {return Err(Error::InternalError("Expect a product"))}
+    //     //         };
+    //     //         let values: Vec<BasicValueEnum<'ctx>> = Vec::new();
+    //     //         for (i, mapped) in repr.mapping.iter().enumerate() {
+    //     //             if let Some(mapped_pos) = mapped {
+    //     //                 let this_type = repr.repr.get_field_type_at_index()
+    //     //             }
+    //     //         }
+    //     //     },
+    //     //     _ => {return Err(Error::InternalError("Expected a product"))}
+    //     // };
+
+    //     // unimplemented!();
+    // }
+
     /// Get a compiled constant `rain` value or function
     pub fn compile_enum(&mut self, v: &ValueEnum) -> Result<Const<'ctx>, Error> {
         match v {
@@ -615,10 +638,49 @@ impl<'ctx> Codegen<'ctx> {
     /// Build a tuple in a local context
     pub fn build_tuple(
         &mut self,
-        _ctx: &mut LocalCtx<'ctx>,
-        _p: &Tuple,
+        ctx: &mut LocalCtx<'ctx>,
+        p: &Tuple,
     ) -> Result<Local<'ctx>, Error> {
-        unimplemented!()
+        let p_enum = p.ty().as_enum();
+        match p_enum {
+            ValueEnum::Product(product) => {
+                let repr = match self.compile_product(product)? {
+                    Repr::Product(tmp) => tmp,
+                    Repr::Prop => return Ok(Local::Unit),
+                    Repr::Empty => return Ok(Local::Contradiction),
+                    // TODO: think about Local::Irrep
+                    Repr::Irrep => return Err(Error::Irrepresentable),
+                    // TODO: Rethink the following later
+                    Repr::Function(_f) => {
+                        return Err(Error::NotImplemented(
+                            "Function in tuple not implemented"
+                        ));
+                    },
+                    Repr::Type(_t) => {
+                        return Err(Error::NotImplemented(
+                            "Type in tuple not supported yet"
+                        ))
+                    }
+                };
+                let mut values: Vec<BasicValueEnum<'ctx>> = Vec::new();
+                for (i, mapped) in repr.mapping.iter().enumerate() {
+                    if let Some(_mapped_pos) = mapped {
+                        let this_result = self.build(ctx, &p[i])?;
+                        // Note: This assumes that each type has unique representation
+                        let value: BasicValueEnum<'ctx> = match this_result {
+                            Local::Value(v) => match v.try_into() {
+                                Ok(v) => v,
+                                Err(()) => unimplemented!("Function types in tuple")
+                            },
+                            l => panic!("Invalid struct member {:?}", l)
+                        };
+                        values.push(value);
+                    }
+                }
+                Ok(Local::Value(repr.repr.const_named_struct(&values[..]).into()))
+            },
+            _ => Err(Error::InternalError("Expected a product"))
+        }
     }
 
     /// Build the evaluation of a logical operation on an argument list
@@ -966,16 +1028,14 @@ mod tests {
         let mut builder = Builder::<&str>::new();
         let context = Context::create();
         let module = context.create_module("identity_bool");
-        /*
-        let execution_engine = module
-            .create_jit_execution_engine(OptimizationLevel::None)
-            .unwrap();
-        */
+        // let execution_engine = module
+        //     .create_jit_execution_engine(OptimizationLevel::None)
+        //     .unwrap();
         let mut codegen = Codegen::new(&context, module);
 
         // ValId construction
         let (rest, id) = builder
-            .parse_expr("|x: #product[#bool #bool]| x")
+            .parse_expr("|x: #product[#finite(73) #finite(1025)]| x")
             .expect("Valid lambda");
         assert_eq!(rest, "");
 
@@ -985,7 +1045,7 @@ mod tests {
             r => panic!("Invalid constant generated: {:?}", r),
         };
 
-        //f.print_to_stderr();
+        f.print_to_stderr();
 
         let f_name = f
             .get_name()
@@ -993,35 +1053,29 @@ mod tests {
             .expect("Generated name must be valid UTF-8");
         assert_eq!(f_name, "__lambda_0");
 
-        //TODO: determine FFI
-        /*
-
-        #[repr(transparent)]
-        #[derive(Debug, Copy, Clone)]
-        struct BoolFFITuple([u8; 2]);
-
-        impl PartialEq for BoolFFITuple {
-            fn eq(&self, other: &BoolFFITuple) -> bool {
-                (self.0[0] == 0) == (other.0[0] == 0) && (self.0[1] == 0) == (other.0[1] == 0)
-            }
-        }
+        // #[repr(C)]
+        // #[derive(Debug, Copy, Clone, PartialEq)]
+        // struct _Product0 {
+        //     first: i8,
+        //     second: i16
+        // }
 
         // Jit
-        let jit_f: JitFunction<unsafe extern "C" fn(BoolFFITuple) -> BoolFFITuple> =
-            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+        // let jit_f: JitFunction<unsafe extern "C" fn(_Product0) -> _Product0> =
+        //     unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
 
-        // Run
-        for l in [0, 1].iter().copied() {
-            for r in [0, 1].iter().copied() {
-                let t = BoolFFITuple([l, r]);
-                unsafe {
-                    assert_eq!(
-                        jit_f.call(t),
-                        t
-                    );
-                }
-            }
-        }
-        */
+        // // Run
+        // for first in 0..10 {
+        //     for second in 0..10 {
+        //         let tuple = _Product0{first, second};
+        //         unsafe {
+        //             assert_eq!(
+        //                 jit_f.call(tuple),
+        //                 tuple
+        //             );
+        //         }
+        //     }
+        // }
     }
+
 }
