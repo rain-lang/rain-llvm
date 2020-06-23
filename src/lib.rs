@@ -14,13 +14,13 @@ use inkwell::values::{
     AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
 };
 use inkwell::AddressSpace;
-use rain_lang::function::{lambda::Lambda, pi::Pi};
-use rain_lang::primitive::finite::{Finite, Index};
-use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
-use rain_lang::region::Regional;
-use rain_lang::region::{Parameter, Region};
-use rain_lang::typing::Typed;
-use rain_lang::value::{
+use rain_ir::function::{lambda::Lambda, pi::Pi};
+use rain_ir::primitive::finite::{Finite, Index};
+use rain_ir::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
+use rain_ir::region::Regional;
+use rain_ir::region::{Parameter, Region};
+use rain_ir::typing::Typed;
+use rain_ir::value::{
     expr::Sexpr,
     tuple::{Product, Tuple},
     TypeId, ValId, ValueEnum,
@@ -862,7 +862,7 @@ mod tests {
     use super::*;
     use inkwell::execution_engine::JitFunction;
     use inkwell::OptimizationLevel;
-    use rain_lang::parser::builder::Builder;
+    use rain_ir::parser::builder::Builder;
 
     #[test]
     fn identity_lambda_compiles_properly() {
