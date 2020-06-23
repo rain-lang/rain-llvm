@@ -19,6 +19,7 @@ use rain_lang::primitive::finite::{Finite, Index};
 use rain_lang::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
 use rain_lang::region::Regional;
 use rain_lang::region::{Parameter, Region};
+use rain_lang::typing::Typed;
 use rain_lang::value::{
     expr::Sexpr,
     tuple::{Product, Tuple},
@@ -26,7 +27,6 @@ use rain_lang::value::{
 };
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
-use rain_lang::typing::Typed;
 
 /**
 A local `rain` value
@@ -318,7 +318,7 @@ impl<'ctx> Codegen<'ctx> {
                 Repr::Product(p) => {
                     input_ixes.push(input_reprs.len() as isize);
                     input_reprs.push(p.repr.into());
-                },
+                }
             }
         }
 
@@ -598,15 +598,16 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Finite(_) => Ok(Const::Unit),
             ValueEnum::Index(_i) => Ok(self.compile_index(_i)),
             ValueEnum::Lambda(l) => self.compile_lambda(l),
-            ValueEnum::Pi(_p) => unimplemented!(),
-            ValueEnum::Gamma(_g) => unimplemented!(),
-            ValueEnum::Phi(_p) => unimplemented!(),
+            ValueEnum::Pi(p) => unimplemented!("Pi compilation: {}", p),
+            ValueEnum::Gamma(g) => unimplemented!("Gamma compilation: {}", g),
+            ValueEnum::Phi(p) => unimplemented!("Phi compilation: {}", p),
             ValueEnum::Parameter(_) => Err(Error::NotConst),
-            ValueEnum::Product(_p) => unimplemented!(),
-            ValueEnum::Tuple(_t) => unimplemented!(),
-            ValueEnum::Sexpr(_s) => unimplemented!(),
+            ValueEnum::Product(p) => unimplemented!("Product compilation: {}", p),
+            ValueEnum::Tuple(t) => unimplemented!("Tuple compilation: {}", t),
+            ValueEnum::Sexpr(s) => unimplemented!("Sexpr compilation: {}", s),
             ValueEnum::Universe(_) => Ok(Const::Unit),
             ValueEnum::Logical(l) => Ok(self.compile_logical(l).into()),
+            ValueEnum::Cast(c) => unimplemented!("Cast compilation: {}", c),
         }
     }
 
@@ -652,14 +653,10 @@ impl<'ctx> Codegen<'ctx> {
                     Repr::Irrep => return Err(Error::Irrepresentable),
                     // TODO: Rethink the following later
                     Repr::Function(_f) => {
-                        return Err(Error::NotImplemented(
-                            "Function in tuple not implemented"
-                        ));
-                    },
+                        return Err(Error::NotImplemented("Function in tuple not implemented"));
+                    }
                     Repr::Type(_t) => {
-                        return Err(Error::NotImplemented(
-                            "Type in tuple not supported yet"
-                        ))
+                        return Err(Error::NotImplemented("Type in tuple not supported yet"))
                     }
                 };
                 let mut values: Vec<BasicValueEnum<'ctx>> = Vec::new();
@@ -670,16 +667,18 @@ impl<'ctx> Codegen<'ctx> {
                         let value: BasicValueEnum<'ctx> = match this_result {
                             Local::Value(v) => match v.try_into() {
                                 Ok(v) => v,
-                                Err(()) => unimplemented!("Function types in tuple")
+                                Err(()) => unimplemented!("Function types in tuple"),
                             },
-                            l => panic!("Invalid struct member {:?}", l)
+                            l => panic!("Invalid struct member {:?}", l),
                         };
                         values.push(value);
                     }
                 }
-                Ok(Local::Value(repr.repr.const_named_struct(&values[..]).into()))
-            },
-            _ => Err(Error::InternalError("Expected a product"))
+                Ok(Local::Value(
+                    repr.repr.const_named_struct(&values[..]).into(),
+                ))
+            }
+            _ => Err(Error::InternalError("Expected a product")),
         }
     }
 
@@ -824,14 +823,15 @@ impl<'ctx> Codegen<'ctx> {
             | v @ ValueEnum::Index(_)
             | v @ ValueEnum::Logical(_)
             | v @ ValueEnum::Universe(_) => self.compile_enum(v).map(Local::from),
-            ValueEnum::Lambda(_l) => unimplemented!(),
-            ValueEnum::Pi(_p) => unimplemented!(),
-            ValueEnum::Gamma(_g) => unimplemented!(),
-            ValueEnum::Phi(_p) => unimplemented!(),
+            ValueEnum::Lambda(l) => unimplemented!("Lambda building: {}", l),
+            ValueEnum::Pi(p) => unimplemented!("Pi building: {}", p),
+            ValueEnum::Gamma(g) => unimplemented!("Gamma building: {}", g),
+            ValueEnum::Phi(p) => unimplemented!("Phi building: {}", p),
             ValueEnum::Parameter(p) => self.build_parameter(ctx, p),
-            ValueEnum::Product(_) => unimplemented!(),
+            ValueEnum::Product(p) => unimplemented!("Product building: {}", p),
             ValueEnum::Tuple(t) => self.build_tuple(ctx, t),
             ValueEnum::Sexpr(s) => self.build_sexpr(ctx, s),
+            ValueEnum::Cast(c) => unimplemented!("Cast building: {}", c),
         }
     }
 
@@ -1077,5 +1077,4 @@ mod tests {
         //     }
         // }
     }
-
 }
