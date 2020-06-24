@@ -804,8 +804,50 @@ impl<'ctx> Codegen<'ctx> {
         }
         match f.as_enum() {
             // Special case logical operation building
-            ValueEnum::Logical(l) => self.build_logical_expr(ctx, *l, args),
-            // TODO: build s[0], etc...
+            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, args),
+            _ => {}
+        }
+
+        let ty = f.ty();
+        let f_code: BasicValueEnum = match self.build(ctx, f)? {
+            Local::Value(v) => v.try_into().expect("Unimplemented"),
+            spec_repr => return Ok(spec_repr),
+        };
+
+        match ty.as_enum() {
+            ValueEnum::Product(_p) => {
+                match self.get_repr(&ty.clone_ty())? {
+                    Repr::Prop => Ok(Local::Unit),
+                    Repr::Empty => Ok(Local::Contradiction),
+                    Repr::Irrep => Ok(Local::Irrep),
+                    Repr::Type(_t) => unimplemented!(),
+                    Repr::Function(_f) => unimplemented!(),
+                    Repr::Product(p) => {
+                        // Generate GEP.
+                        if args.len() != 1 {
+                            unimplemented!();
+                        }
+                        let ix = match args[0].as_enum() {
+                            ValueEnum::Index(ix) => ix.ix() as usize,
+                            _ => unimplemented!(),
+                        };
+                        let repr_ix = if let Some(ix) = p.mapping[ix] {
+                            ix
+                        } else {
+                            return Ok(Local::Unit);
+                        };
+                        let struct_value = match f_code {
+                            BasicValueEnum::StructValue(s) => s,
+                            _ => panic!("Internal error: Repr::Product guarantees BasicValueEnum::StructValue")
+                        };
+                        let element = self
+                            .builder
+                            .build_extract_value(struct_value, repr_ix, "idx")
+                            .expect("Internal error: valid index guaranteed by IR construction");
+                        Ok(Local::Value(element.into()))
+                    }
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -1035,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn identity_product_properly() {
+    fn identity_product_compiles_properly() {
         // Setup
         let mut builder = Builder::<&str>::new();
         let context = Context::create();
@@ -1089,4 +1131,7 @@ mod tests {
         //     }
         // }
     }
+
+    #[test]
+    fn projections_compile_correctly() {}
 }
