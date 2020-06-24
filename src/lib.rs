@@ -792,6 +792,24 @@ impl<'ctx> Codegen<'ctx> {
         Ok(self.builder.build_or(is_high, is_low, "psplit").into())
     }
 
+    /// Build a function application in a local context
+    pub fn build_app(
+        &mut self,
+        ctx: &mut LocalCtx<'ctx>,
+        f: &ValId,
+        args: &[ValId],
+    ) -> Result<Local<'ctx>, Error> {
+        if args.len() == 0 {
+            return self.build(ctx, f);
+        }
+        match f.as_enum() {
+            // Special case logical operation building
+            ValueEnum::Logical(l) => self.build_logical_expr(ctx, *l, args),
+            // TODO: build s[0], etc...
+            _ => unimplemented!(),
+        }
+    }
+
     /// Build an S-expression in a local context
     pub fn build_sexpr(
         &mut self,
@@ -801,13 +819,7 @@ impl<'ctx> Codegen<'ctx> {
         if s.len() == 0 {
             return Ok(Local::Unit);
         }
-        match s[0].as_enum() {
-            // Special case logical operation building
-            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, &s.as_slice()[1..]),
-            _ => {}
-        }
-        //TODO: build s[0], etc...
-        unimplemented!()
+        self.build_app(ctx, &s[0], &s.as_slice()[1..])
     }
 
     /// Build a `ValueEnum` in a local context
