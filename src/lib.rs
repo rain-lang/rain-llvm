@@ -792,6 +792,66 @@ impl<'ctx> Codegen<'ctx> {
         Ok(self.builder.build_or(is_high, is_low, "psplit").into())
     }
 
+    /// Build a function application in a local context
+    pub fn build_app(
+        &mut self,
+        ctx: &mut LocalCtx<'ctx>,
+        f: &ValId,
+        args: &[ValId],
+    ) -> Result<Local<'ctx>, Error> {
+        if args.len() == 0 {
+            return self.build(ctx, f);
+        }
+        match f.as_enum() {
+            // Special case logical operation building
+            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, args),
+            _ => {}
+        }
+
+        let ty = f.ty();
+        let f_code: BasicValueEnum = match self.build(ctx, f)? {
+            Local::Value(v) => v.try_into().expect("Unimplemented"),
+            spec_repr => return Ok(spec_repr),
+        };
+
+        match ty.as_enum() {
+            ValueEnum::Product(_p) => {
+                match self.get_repr(&ty.clone_ty())? {
+                    Repr::Prop => Ok(Local::Unit),
+                    Repr::Empty => Ok(Local::Contradiction),
+                    Repr::Irrep => Ok(Local::Irrep),
+                    Repr::Type(_t) => unimplemented!(),
+                    Repr::Function(_f) => unimplemented!(),
+                    Repr::Product(p) => {
+                        // Generate GEP.
+                        if args.len() != 1 {
+                            unimplemented!();
+                        }
+                        let ix = match args[0].as_enum() {
+                            ValueEnum::Index(ix) => ix.ix() as usize,
+                            _ => unimplemented!(),
+                        };
+                        let repr_ix = if let Some(ix) = p.mapping[ix] {
+                            ix
+                        } else {
+                            return Ok(Local::Unit);
+                        };
+                        let struct_value = match f_code {
+                            BasicValueEnum::StructValue(s) => s,
+                            _ => panic!("Internal error: Repr::Product guarantees BasicValueEnum::StructValue")
+                        };
+                        let element = self
+                            .builder
+                            .build_extract_value(struct_value, repr_ix, "idx")
+                            .expect("Internal error: valid index guaranteed by IR construction");
+                        Ok(Local::Value(element.into()))
+                    }
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     /// Build an S-expression in a local context
     pub fn build_sexpr(
         &mut self,
@@ -801,13 +861,7 @@ impl<'ctx> Codegen<'ctx> {
         if s.len() == 0 {
             return Ok(Local::Unit);
         }
-        match s[0].as_enum() {
-            // Special case logical operation building
-            ValueEnum::Logical(l) => return self.build_logical_expr(ctx, *l, &s.as_slice()[1..]),
-            _ => {}
-        }
-        //TODO: build s[0], etc...
-        unimplemented!()
+        self.build_app(ctx, &s[0], &s.as_slice()[1..])
     }
 
     /// Build a `ValueEnum` in a local context
@@ -1023,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn identity_product_properly() {
+    fn identity_product_compiles_properly() {
         // Setup
         let mut builder = Builder::<&str>::new();
         let context = Context::create();
@@ -1077,4 +1131,7 @@ mod tests {
         //     }
         // }
     }
+
+    #[test]
+    fn projections_compile_correctly() {}
 }
