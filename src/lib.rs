@@ -11,7 +11,8 @@ use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicType, BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{
-    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
+    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, 
+    InstructionValue, IntValue,
 };
 use inkwell::AddressSpace;
 use rain_ir::function::{lambda::Lambda, pi::Pi};
@@ -792,6 +793,37 @@ impl<'ctx> Codegen<'ctx> {
         Ok(self.builder.build_or(is_high, is_low, "psplit").into())
     }
 
+    /// Build a function call with arguments
+    pub fn build_function_call(
+        &mut self, 
+        ctx: &mut LocalCtx<'ctx>,
+        f: &FunctionValue<'ctx>,
+        args: &[ValId]
+    ) -> Result<Local<'ctx>, Error> {
+        let mut this_args: Vec<BasicValueEnum> = Vec::new();
+        for arg in args {
+            match self.build(ctx, arg)? {
+                Local::Contradiction => panic!("Internal Error: function argument is a contradiction"),
+                Local::Irrep => panic!("Internal Error: function argument unrepresentable"),
+                Local::Unit => { 
+                    return Ok(Local::Unit); 
+                },
+                Local::Value(v) => {
+                    match v.try_into() {
+                        Ok(this_v) => this_args.push(this_v),
+                        Err(_) => panic!("Internal Error, function argument is not a basic value")
+                    };
+                }
+            }
+        }
+        match self.builder
+            .build_call::<FunctionValue<'ctx>>(*f, &this_args[..], "f")
+            .try_as_basic_value().left() {
+                Some(b) => Ok(b.into()),
+                None => Ok(Local::Unit)
+            }
+    }
+
     /// Build a function application in a local context
     pub fn build_app(
         &mut self,
@@ -847,6 +879,18 @@ impl<'ctx> Codegen<'ctx> {
                         Ok(Local::Value(element.into()))
                     }
                 }
+            }
+            ValueEnum::Lambda(l) => {
+                let compiled_lambda = match self.compile_lambda(l) {
+                    Ok(res) => {
+                        match res {
+                            Const::Function(f) => f,
+                            _ => panic!("Expected function, got something else")
+                        }
+                    },
+                    Err(_) => unimplemented!("Non-constant lambda not implemented")
+                };
+                Ok(self.build_function_call(ctx, &compiled_lambda, args)?.into())
             }
             _ => unimplemented!(),
         }
