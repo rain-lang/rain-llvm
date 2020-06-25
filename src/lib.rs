@@ -803,21 +803,21 @@ impl<'ctx> Codegen<'ctx> {
         let mut this_args: Vec<BasicValueEnum> = Vec::new();
         for arg in args {
             match self.build(ctx, arg)? {
-                Local::Contradiction => panic!("Internal Error: function argument is a contradiction"),
-                Local::Irrep => panic!("Internal Error: function argument unrepresentable"),
+                Local::Contradiction => return Ok(Local::Contradiction),
+                Local::Irrep => return Err(Error::Irrepresentable),
                 Local::Unit => { 
                     return Ok(Local::Unit); 
                 },
                 Local::Value(v) => {
                     match v.try_into() {
                         Ok(this_v) => this_args.push(this_v),
-                        Err(_) => panic!("Internal Error, function argument is not a basic value")
+                        Err(_) => unimplemented!("Higher order functions not implemented")
                     };
                 }
             }
         }
         match self.builder
-            .build_call::<FunctionValue<'ctx>>(*f, &this_args[..], "f")
+            .build_call::<FunctionValue<'ctx>>(*f, &this_args[..], "call")
             .try_as_basic_value().left() {
                 Some(b) => Ok(b.into()),
                 None => Ok(Local::Unit)
@@ -1175,7 +1175,4 @@ mod tests {
         //     }
         // }
     }
-
-    #[test]
-    fn projections_compile_correctly() {}
 }
