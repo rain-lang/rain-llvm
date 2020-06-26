@@ -2,10 +2,29 @@
 Code generation for rain functions
 */
 use super::*;
+use inkwell::module::Linkage;
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
+use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
-use rain_ir::value::expr::Sexpr;
+use rain_ir::value::{expr::Sexpr, VarId};
+
+/// A prototype for a `rain` function
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Prototype<'ctx> {
+    /// An LLVM function value
+    Function(FunctionValue<'ctx>),
+    /// A unit function, i.e. a function whose return type is a unit type or contradiction
+    /// *or* which has a contradiction as an argument
+    Unit,
+    /// An irrepresentable function, which has irrepresentable arguments and a non unit/contradiction
+    /// return type *and* no contradiction arguments
+    Irrep,
+}
+
+/// The default linkage of lambda values
+pub const DEFAULT_LAMBDA_LINKAGE: Option<Linkage> = None;
 
 impl<'ctx> Codegen<'ctx> {
     /// Build a constant `rain` function
@@ -13,6 +32,110 @@ impl<'ctx> Codegen<'ctx> {
         unimplemented!()
     }
 
+    /// Create a function prototype for a lambda function, binding its parameters
+    pub fn build_pi_prototype(&mut self, lambda: &VarId<Lambda>) -> Result<Prototype<'ctx>, Error> {
+        if lambda.depth() != 0 {
+            unimplemented!("Closures not implemented!")
+        }
+        let pi = lambda.get_ty();
+        let region = pi.def_region();
+        let result = pi.result();
+        if result.depth() != 0 {
+            return Err(Error::NotImplemented(
+                "Non-constant return types for pi functions",
+            ));
+        }
+        let result_repr = match self.repr(result)? {
+            Repr::Type(t) => t,
+            Repr::Function(_f) => unimplemented!(),
+            Repr::Empty | Repr::Prop => return Ok(Prototype::Unit),
+            Repr::Irrep => return Ok(Prototype::Irrep),
+            Repr::Product(p) => p.repr.into(),
+        };
+        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
+        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
+        const PROP_IX: isize = -1;
+        const IRREP_IX: isize = -2;
+        let mut has_empty = false;
+
+        for input_ty in region.iter() {
+            match self.repr(input_ty)? {
+                Repr::Type(t) => {
+                    if !has_empty {
+                        input_ixes.push(input_reprs.len() as isize);
+                        input_reprs.push(t);
+                    }
+                }
+                Repr::Function(_) => unimplemented!(),
+                Repr::Prop => {
+                    if !has_empty {
+                        input_ixes.push(PROP_IX);
+                    }
+                }
+                Repr::Empty => has_empty = true,
+                Repr::Irrep => {
+                    if !has_empty {
+                        input_ixes.push(IRREP_IX);
+                    }
+                }
+                Repr::Product(p) => {
+                    if !has_empty {
+                        input_ixes.push(input_reprs.len() as isize);
+                        input_reprs.push(p.repr.into());
+                    }
+                }
+            }
+        }
+
+        if has_empty {
+            return Ok(Prototype::Unit);
+        }
+
+        // Construct a function type
+        let result_ty = result_repr.fn_type(&input_reprs, false);
+
+        // Construct an empty function of a given type
+        let result_fn = self.module.add_function(
+            &format!("__lambda_{}", self.counter),
+            result_ty,
+            DEFAULT_LAMBDA_LINKAGE,
+        );
+        self.counter += 1;
+
+        // Bind parameters
+        for (i, ix) in input_ixes.iter().copied().enumerate() {
+            let param = (
+                lambda.as_norm() as *const NormalValue,
+                ValId::from(
+                    region
+                        .clone()
+                        .param(i)
+                        .expect("Iterated index is in bounds"),
+                ),
+            );
+            match ix {
+                PROP_IX => {
+                    self.vals.insert(param, Val::Unit);
+                }
+                IRREP_IX => {
+                    self.vals.insert(param, Val::Irrep);
+                }
+                ix => {
+                    self.vals.insert(
+                        param,
+                        Val::Value(
+                            result_fn
+                                .get_nth_param(ix as u32)
+                                .expect("Index in vector is in bounds")
+                                .into(),
+                        ),
+                    );
+                }
+            }
+        }
+
+        Ok(Prototype::Function(result_fn))
+    }
     /// Build a function call with arguments
     pub fn build_function_call(
         &mut self,
@@ -96,7 +219,7 @@ impl<'ctx> Codegen<'ctx> {
                 Val::Irrep => Ok(Val::Irrep), //TODO: think about this...
                 Val::Unit => unimplemented!("Unit lambda representation"), //TODO: think about this...
                 Val::Value(v) => unimplemented!("Value lambda representation {:?}", v),
-                Val::Function(f) => self.build_function_call(f, args)
+                Val::Function(f) => self.build_function_call(f, args),
             },
             v => unimplemented!("Application of value {}", v),
         }
