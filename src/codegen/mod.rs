@@ -8,8 +8,8 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use rain_ir::value::{NormalValue, TypeId, ValId, ValueEnum};
-use std::ptr::NonNull;
+use inkwell::values::FunctionValue;
+use rain_ir::value::{TypeId, ValId, ValueEnum};
 
 mod finite;
 mod function;
@@ -27,50 +27,14 @@ potential generalizations to a multi-threaded compilation model, with separate L
 #[derive(Debug)]
 pub struct Codegen<'ctx> {
     /// Compiled values
-    ///
-    /// ## Implementation notes
-    /// `(context, value)` pairs are mapped to LLVM representations by this member. `context` is stored as a
-    /// `*const NormalValue` to avoid unnecessary atomic operations: the injection from `*const NormalValue`s stored
-    /// in this map and contexts is preserved by the fact that, as long as entries for a context are being into this
-    /// map, the context is either being kept alive by some object somewhere *or* has been inserted into this hashmap
-    /// Here, the `NULL` pointer corresponds to a global, i.e. constant, `rain` value.
-    ///
-    /// ## Ideas
-    /// One future implementation direction could be to add a `HashMap` from the `ValId` for a context to a vector of the
-    /// members it holds. This could ensure the above property more cleanly, avoiding bugs, and allow for the possibility
-    /// of easily garbage collecting all `vals` members pertinent to a certain `context` without scanning the entire map.
-    /// On the other hand, this may be duplicating functionality from, e.g., the `deps` member of `Lambda`, `Pi`, etc., and
-    /// or may not be worth the performance and memory costs.
-    vals: HashMap<(*const NormalValue, ValId), Val<'ctx>>,
-    /// A hashmap of contexts to the current basic block for each context.
-    ///
-    /// ## Implementation Notes
-    /// `NonNull` is used since the global context has no basic block, having no run-time control flow, and hence the
-    /// `NULL` context should never have an entry in this hash map.
-    ///
-    /// ## Ideas
-    /// Perhaps reconsider for runtime initialization, e.g. environment variables.
-    heads: HashMap<NonNull<NormalValue>, BasicBlock<'ctx>>,
+    vals: HashMap<(FunctionValue<'ctx>, ValId), Val<'ctx>>,
+    /// A hashmap of contexts to the current basic block for each target function
+    heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
+    /// The current function being compiled, if any
+    curr: Option<FunctionValue<'ctx>>,
     /// Type representations
-    ///
-    /// ## Implementation Notes
-    /// `rain` types are mapped to their, currently unique, LLVM representations. A more complex solution will probably have to
-    /// be sought for closures, dependent types, and unions, but this will have to do for now.
-    ///
-    /// ## Ideas
-    /// This map may be partially or completely replaced with a per-value representation mapping. Alternatively, non-constant types
-    /// could be mapped to unions here, though this would require mapping to the same union across different functions using the same
-    /// region. This could be avoided by tagging mappings with a `*const NormalValue` context as in `vals`, though is probably
-    /// less important (and may even evolve into an important ABI property for at least some calling conventions).
     reprs: HashMap<TypeId, Repr<'ctx>>,
     /// Function name counter.
-    ///
-    /// ## Ideas
-    /// Consider using a hash function to generate function names, since the order of function naming should be unspecified anyways.
-    /// Consider a bijective map of values to function names, to avoid collisions. Consider whether hashed names should be inserted
-    /// into the map: potentially insert them in only one direction of the map (i.e. `name -> function`, since the name can already be
-    /// derived from the function). Would be interesting to have only collisions and manual namings register in the other direction.
-    /// FFI will also be an issue, as will shims...
     counter: usize,
     /// The LLVM module to which these values are being added
     module: Module<'ctx>,
@@ -86,6 +50,7 @@ impl<'ctx> Codegen<'ctx> {
         Codegen {
             vals: HashMap::default(),
             heads: HashMap::default(),
+            curr: None,
             reprs: HashMap::default(),
             counter: 0,
             module,
@@ -97,7 +62,7 @@ impl<'ctx> Codegen<'ctx> {
     ///
     /// See the documentation for the `vals` private member of `Codegen` for more information.
     #[inline]
-    pub fn vals(&self) -> &HashMap<(*const NormalValue, ValId), Val<'ctx>> {
+    pub fn vals(&self) -> &HashMap<(FunctionValue<'ctx>, ValId), Val<'ctx>> {
         &self.vals
     }
     /// Get the compiled representations in this context
@@ -122,7 +87,7 @@ impl<'ctx> Codegen<'ctx> {
         let r = match t.as_enum() {
             ValueEnum::Finite(f) => self.repr_finite(f),
             ValueEnum::BoolTy(_) => unreachable!(),
-            _ => unimplemented!("Representation for rain type {} is not implemented", t)
+            _ => unimplemented!("Representation for rain type {} is not implemented", t),
         };
         let old = self.reprs.insert(t.clone(), r.clone());
         // We just checked above that the type has no representation!

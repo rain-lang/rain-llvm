@@ -8,7 +8,7 @@ use inkwell::values::{BasicValueEnum, FunctionValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
 use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
-use rain_ir::value::{expr::Sexpr, VarId};
+use rain_ir::value::expr::Sexpr;
 
 /// A prototype for a `rain` function
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -33,7 +33,7 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Create a function prototype for a lambda function, binding its parameters
-    pub fn build_pi_prototype(&mut self, lambda: &VarId<Lambda>) -> Result<Prototype<'ctx>, Error> {
+    pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
         if lambda.depth() != 0 {
             unimplemented!("Closures not implemented!")
         }
@@ -105,7 +105,7 @@ impl<'ctx> Codegen<'ctx> {
         // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
             let param = (
-                lambda.as_norm() as *const NormalValue,
+                result_fn,
                 ValId::from(
                     region
                         .clone()
@@ -234,7 +234,48 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Build a `rain` lambda function
-    pub fn build_lambda(&mut self, _l: &Lambda) -> Result<Val<'ctx>, Error> {
-        unimplemented!("Lambda construction")
+    pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
+        // Get the function to build
+        let f = match self.build_prototype(lambda)? {
+            Prototype::Function(f) => f,
+            Prototype::Unit => return Ok(Val::Unit),
+            Prototype::Irrep => return Ok(Val::Irrep),
+        };
+        // Set the current function, caching the old one
+        let old_curr = self.curr.replace(f);
+        // Add an entry basic block, registering it
+        let entry_bb = self.context.append_basic_block(f, "entry");
+        self.heads.insert(f, entry_bb);
+        // Build a return value for the current function
+        let retv = self.build(lambda.result());
+        // If successful, build a return instruction
+        let retv_build = match retv {
+            Ok(retv) => match retv {
+                Val::Value(v) => {
+                    self.builder.build_return(Some(&v));
+                    Ok(())
+                }
+                Val::Function(f) => unimplemented!(
+                    "Higher order functions not yet implemented, returned {:?}",
+                    f
+                ),
+                v @ Val::Unit | v @ Val::Irrep | v @ Val::Contr => panic!(
+                    "Impossible representation {:?} for compiled function result",
+                    v
+                ),
+            },
+            Err(err) => Err(err),
+        };
+        // Either way, reset the build head if necessary
+        self.curr = old_curr;
+        if let Some(curr) = self.curr {
+            if let Some(head) = self.heads.get(&curr) {
+                self.builder.position_at_end(*head)
+            }
+        };
+        // Bubble up retv errors here;
+        retv_build?;
+        // Otherwise, return successfully constructed function
+        Ok(Val::Function(f))
     }
 }
