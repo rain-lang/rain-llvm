@@ -11,7 +11,8 @@ A representation of product
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProductRepr<'ctx> {
     /// A mapping since we need to skip Repr::Unit
-    /// mapping[i] hold the position of ith element in the struct
+    /// 
+    /// `mapping[i]` holds the position of ith element in the struct
     pub mapping: Vec<Option<u32>>,
     /// The actual representation
     pub repr: StructType<'ctx>,
