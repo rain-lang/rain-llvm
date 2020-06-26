@@ -3,7 +3,8 @@ LLVM representations for rain types and values
 */
 
 use inkwell::types::{BasicTypeEnum, FunctionType, StructType};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
+use std::convert::TryFrom;
 use std::rc::Rc;
 
 /**
@@ -12,7 +13,7 @@ A representation of product
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProductRepr<'ctx> {
     /// A mapping since we need to skip Repr::Unit
-    /// 
+    ///
     /// `mapping[i]` holds the position of ith element in the struct
     pub mapping: Vec<Option<u32>>,
     /// The actual representation
@@ -53,4 +54,40 @@ pub enum Val<'ctx> {
     Contr,
     /// An irrepresentable value but valid value, propagating to a runtime error if not in an unreachable branch
     Irrep,
+}
+
+impl<'ctx> From<BasicValueEnum<'ctx>> for Val<'ctx> {
+    #[inline]
+    fn from(b: BasicValueEnum<'ctx>) -> Val<'ctx> {
+        Val::Value(b)
+    }
+}
+
+impl<'ctx> TryFrom<Val<'ctx>> for BasicValueEnum<'ctx> {
+    type Error = Val<'ctx>;
+    #[inline]
+    fn try_from(v: Val<'ctx>) -> Result<BasicValueEnum<'ctx>, Val<'ctx>> {
+        match v {
+            Val::Value(v) => Ok(v),
+            v => Err(v),
+        }
+    }
+}
+
+impl<'ctx> From<IntValue<'ctx>> for Val<'ctx> {
+    #[inline]
+    fn from(i: IntValue<'ctx>) -> Val<'ctx> {
+        Val::Value(i.into())
+    }
+}
+
+impl<'ctx> TryFrom<Val<'ctx>> for IntValue<'ctx> {
+    type Error = Val<'ctx>;
+    #[inline]
+    fn try_from(v: Val<'ctx>) -> Result<IntValue<'ctx>, Val<'ctx>> {
+        match v {
+            Val::Value(BasicValueEnum::IntValue(v)) => Ok(v),
+            v => Err(v),
+        }
+    }
 }
