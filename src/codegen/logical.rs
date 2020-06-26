@@ -9,15 +9,15 @@ use rain_ir::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
 use std::convert::TryInto;
 
 impl<'ctx> Codegen<'ctx> {
-    /// Compile a boolean value
-    pub fn compile_bool(&mut self, b: bool) -> IntValue<'ctx> {
+    /// Build a boolean value
+    pub fn build_bool(&mut self, b: bool) -> IntValue<'ctx> {
         self.context.bool_type().const_int(b as u64, false)
     }
 
-    /// Compile a constant logical `rain` function
-    pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
+    /// Build a constant logical `rain` function
+    pub fn build_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
         if let Some(b) = l.get_const() {
-            return self.compile_constant(&LOGICAL_OP_TYS[l.arity() as usize - 1], &b.into());
+            return self.build_constant(&LOGICAL_OP_TYS[l.arity() as usize - 1], &b.into());
         }
         match l.arity() {
             1 => match l.data() {
@@ -44,7 +44,7 @@ impl<'ctx> Codegen<'ctx> {
         }
         // Direct construction of constant operations
         if let Some(c) = l.get_const() {
-            return Ok(self.compile_bool(c).into());
+            return Ok(self.build_bool(c).into());
         }
         // Direct construction of non-constant operations
         match l_arity {
@@ -90,7 +90,7 @@ impl<'ctx> Codegen<'ctx> {
             (Either::Left(high), Either::Left(low)) => {
                 // Selection between constant booleans: arity 1!
                 debug_assert_eq!(l_arity, 1);
-                (self.compile_bool(high), self.compile_bool(low))
+                (self.build_bool(high), self.build_bool(low))
             }
             (Either::Right(high), Either::Right(low)) => {
                 // Selection between function results: arity > 1

@@ -11,8 +11,8 @@ use rain_ir::value::tuple::{Product, Tuple};
 use std::rc::Rc;
 
 impl<'ctx> Codegen<'ctx> {
-    /// Compile a product
-    pub fn compile_product(&mut self, p: &Product) -> Result<Repr<'ctx>, Error> {
+    /// Get the representation for a product type
+    pub fn repr_product(&mut self, p: &Product) -> Result<Repr<'ctx>, Error> {
         let mut mapping: Vec<Option<u32>> = Vec::new();
         let mut struct_index = 0;
         let mut repr_vec: Vec<BasicTypeEnum<'ctx>> = Vec::new();
@@ -58,12 +58,17 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    /// Build a tuple in a local context
-    pub fn build_tuple(&mut self, p: &Tuple) -> Result<Val<'ctx>, Error> {
-        let p_enum = p.ty().as_enum();
+    /// Build a product in the current local context
+    pub fn build_product(&mut self, _p: &Product) -> Result<Val<'ctx>, Error> {
+        unimplemented!("Product type compilation")
+    }
+
+    /// Build a tuple in the current local context
+    pub fn build_tuple(&mut self, t: &Tuple) -> Result<Val<'ctx>, Error> {
+        let p_enum = t.ty().as_enum();
         match p_enum {
             ValueEnum::Product(product) => {
-                let repr = match self.compile_product(product)? {
+                let repr = match self.repr_product(product)? {
                     Repr::Product(tmp) => tmp,
                     Repr::Prop => return Ok(Val::Unit),
                     Repr::Empty => return Ok(Val::Contr),
@@ -80,7 +85,7 @@ impl<'ctx> Codegen<'ctx> {
                 let mut values: Vec<BasicValueEnum<'ctx>> = Vec::new();
                 for (i, mapped) in repr.mapping.iter().enumerate() {
                     if let Some(_mapped_pos) = mapped {
-                        let this_result = self.build(&p[i])?;
+                        let this_result = self.build(&t[i])?;
                         // Note: This assumes that each type has unique representation
                         let value: BasicValueEnum<'ctx> = match this_result {
                             Val::Value(v) => v,
@@ -92,7 +97,10 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 Ok(Val::Value(repr.repr.const_named_struct(&values[..]).into()))
             }
-            _ => Err(Error::InternalError("Expected a product")),
+            ty => panic!(
+                "Expected tuple {} to have a product type, but type {} returned instead",
+                t, ty
+            ),
         }
     }
 }

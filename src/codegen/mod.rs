@@ -132,7 +132,7 @@ impl<'ctx> Codegen<'ctx> {
         debug_assert_eq!(old, None);
         Ok(r)
     }
-    /// Build a given value in the current `BasicBlock`
+    /// Build a given value
     pub fn build(&mut self, v: &ValId) -> Result<Val<'ctx>, Error> {
         unimplemented!("Value building unimplemented: v = {}", v)
     }
