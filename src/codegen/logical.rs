@@ -17,7 +17,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Compile a constant logical `rain` function
     pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
         if let Some(b) = l.get_const() {
-            return self.compile_constant(&LOGICAL_OP_TYS[l.arity() as usize], &b.into());
+            return self.compile_constant(&LOGICAL_OP_TYS[l.arity() as usize - 1], &b.into());
         }
         match l.arity() {
             1 => match l.data() {
