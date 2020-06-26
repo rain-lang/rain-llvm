@@ -3,194 +3,11 @@
 */
 #![forbid(missing_docs, missing_debug_implementations)]
 
-use either::Either;
-use fxhash::FxHashMap as HashMap;
-use inkwell::basic_block::BasicBlock;
-use inkwell::builder::Builder;
-use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{
-    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
-};
-use inkwell::AddressSpace;
-use rain_ir::function::{lambda::Lambda, pi::Pi};
-use rain_ir::primitive::finite::{Finite, Index};
-use rain_ir::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
-use rain_ir::region::Regional;
-use rain_ir::region::{Parameter, Region};
-use rain_ir::typing::Typed;
-use rain_ir::value::{
-    expr::Sexpr,
-    tuple::{Product, Tuple},
-    TypeId, ValId, ValueEnum,
-};
-use std::convert::{TryFrom, TryInto};
-use std::ops::Deref;
-
 pub mod codegen;
 pub mod error;
 pub mod repr;
 
-use error::*;
-use repr::*;
-
-/**
-A local `rain` value
-*/
-#[derive(Copy, Debug, Clone, Eq, PartialEq)]
-pub enum Local<'ctx> {
-    /// A normal value: the result of an instruction
-    Value(AnyValueEnum<'ctx>),
-    /// A unit value
-    Unit,
-    /// A contradiction: undefined behaviour
-    Contradiction,
-    /// An irrepresentable value
-    Irrep,
-}
-
-impl<'ctx> From<Const<'ctx>> for Local<'ctx> {
-    #[inline]
-    fn from(c: Const<'ctx>) -> Local<'ctx> {
-        match c {
-            Const::Value(v) => Local::Value(v.into()),
-            Const::Function(f) => Local::Value(f.into()),
-            Const::Unit => Local::Unit,
-            Const::Contradiction => Local::Contradiction,
-            Const::Irrep => Local::Irrep,
-        }
-    }
-}
-
-impl<'ctx> From<AnyValueEnum<'ctx>> for Local<'ctx> {
-    #[inline]
-    fn from(a: AnyValueEnum<'ctx>) -> Local<'ctx> {
-        Local::Value(a)
-    }
-}
-
-impl<'ctx> From<BasicValueEnum<'ctx>> for Local<'ctx> {
-    #[inline]
-    fn from(b: BasicValueEnum<'ctx>) -> Local<'ctx> {
-        Local::Value(b.into())
-    }
-}
-
-impl<'ctx> From<IntValue<'ctx>> for Local<'ctx> {
-    #[inline]
-    fn from(i: IntValue<'ctx>) -> Local<'ctx> {
-        Local::Value(i.into())
-    }
-}
-
-impl<'ctx> TryFrom<Local<'ctx>> for IntValue<'ctx> {
-    type Error = Local<'ctx>;
-    fn try_from(l: Local<'ctx>) -> Result<IntValue<'ctx>, Local<'ctx>> {
-        match l {
-            Local::Value(a) => a.try_into().map_err(|_| l),
-            _ => Err(l),
-        }
-    }
-}
-
-/**
-A constant `rain` value or function
-*/
-#[derive(Copy, Debug, Clone, Eq, PartialEq)]
-pub enum Const<'ctx> {
-    /// A normal constant value
-    Value(BasicValueEnum<'ctx>),
-    /// A compiled function
-    Function(FunctionValue<'ctx>),
-    /// A unit value
-    Unit,
-    /// A contradiction: undefined behaviour. This means the program made a wrong assumption!
-    Contradiction,
-    /// An irrepresentable value
-    Irrep,
-}
-
-impl<'ctx> From<FunctionValue<'ctx>> for Const<'ctx> {
-    fn from(f: FunctionValue<'ctx>) -> Const<'ctx> {
-        Const::Function(f)
-    }
-}
-
-impl<'ctx> From<BasicValueEnum<'ctx>> for Const<'ctx> {
-    #[inline]
-    fn from(b: BasicValueEnum<'ctx>) -> Const<'ctx> {
-        Const::Value(b.into())
-    }
-}
-
-impl<'ctx> From<IntValue<'ctx>> for Const<'ctx> {
-    #[inline]
-    fn from(i: IntValue<'ctx>) -> Const<'ctx> {
-        Const::Value(i.into())
-    }
-}
-
-/**
-A function prototype
-*/
-#[derive(Debug)]
-pub enum Prototype<'ctx> {
-    /// A local context to build the function in
-    Ctx(LocalCtx<'ctx>),
-    /// A marker indicating this function is a mere proposition
-    Prop,
-    /// A marker indicating this function is irrepresentable
-    Irrep,
-}
-
-/**
-A local `rain` code generation context
-*/
-#[derive(Debug)]
-pub struct LocalCtx<'ctx> {
-    /// Values defined for this function
-    locals: HashMap<ValId, Local<'ctx>>,
-    /// The region associated with this local context
-    region: Region,
-    /// The basic block at the head of this local context
-    head: Option<BasicBlock<'ctx>>,
-    /// The function for which this context is defined
-    func: FunctionValue<'ctx>,
-}
-
-impl<'ctx> LocalCtx<'ctx> {
-    /// Crate a new code generation context with a given function and basic block as base
-    pub fn new(
-        _codegen: &mut Codegen<'ctx>,
-        region: Region,
-        func: FunctionValue<'ctx>,
-        head: Option<BasicBlock<'ctx>>,
-    ) -> LocalCtx<'ctx> {
-        LocalCtx {
-            locals: HashMap::default(),
-            region,
-            func,
-            head,
-        }
-    }
-    /// Get the head of this function. If this function has no head, generate an entry block
-    pub fn get_head(&mut self, codegen: &mut Codegen<'ctx>) -> BasicBlock<'ctx> {
-        if let Some(head) = self.head {
-            return head;
-        }
-        let head = codegen.context.append_basic_block(self.func, "entry");
-        self.head = Some(head);
-        return head;
-    }
-    /// Place a context at the head of this function. If this function has no head, generate an
-    /// entry block.
-    pub fn to_head(&mut self, codegen: &mut Codegen<'ctx>) {
-        let head = self.get_head(codegen);
-        codegen.builder.position_at_end(head);
-    }
-}
-
+/*
 /**
 A `rain` code generation context for a given module
 */
@@ -917,7 +734,9 @@ impl<'ctx> Codegen<'ctx> {
         Ok(result)
     }
 }
+*/
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1139,3 +958,4 @@ mod tests {
         // }
     }
 }
+*/
