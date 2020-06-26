@@ -953,6 +953,74 @@ impl<'ctx> Codegen<'ctx> {
         ctx.locals.insert(v.clone(), result);
         Ok(result)
     }
+
+    /// Implement FFI shim
+    /// T should be the return type of this function
+    pub fn get_shim(&mut self, f: FunctionValue<'ctx>) -> FunctionValue{
+        let f_type = f.get_type();
+        let f_args_type = f_type.get_param_types();
+        let mut shim_args_type: Vec<BasicTypeEnum<'ctx>> = Vec::new();
+        for this_type in f_args_type {
+            match this_type {
+                BasicTypeEnum::StructType(s) => {
+                    // TODO: Address may need to be changed
+                    shim_args_type.push(s.ptr_type(AddressSpace::Global).into());
+                }
+                BasicTypeEnum::IntType(i) => shim_args_type.push(i.into()),
+                BasicTypeEnum::PointerType(p) => shim_args_type.push(p.into()),
+                _ => unimplemented!(),
+            }
+        }
+        let ret_type: BasicTypeEnum<'ctx> = match f_type.get_return_type() {
+                Some(t) => {
+                    match t {
+                        BasicTypeEnum::StructType(s) => {
+                            // TODO: Address may need to be changed
+                            s.ptr_type(AddressSpace::Global).into()
+                        }
+                        BasicTypeEnum::IntType(i) => i.into(),
+                        BasicTypeEnum::PointerType(p) => p.into(),
+                        _ => unimplemented!(),
+                    }
+                },
+                None => unimplemented!("Void return function not implemented")
+        };
+        let wrapper_f_type = ret_type.fn_type(&shim_args_type[..], false);
+        let wrapper_f = self.module.add_function(
+            &format!("__lambda_{}", self.counter),
+            wrapper_f_type,
+            DEFAULT_LAMBDA_LINKAGE
+        );
+        self.counter += 1;
+        let this_block = self.context.append_basic_block(wrapper_f, "entry");
+        self.builder.position_at_end(this_block);
+        let args = wrapper_f.get_params();
+        let mut inner_call_args: Vec<BasicValueEnum<'ctx>> = Vec::new();
+        for arg_val in args {
+            match arg_val {
+                BasicValueEnum::IntValue(i) => inner_call_args.push(i.into()),
+                BasicValueEnum::PointerValue(p) => {
+                    let this_val = self.builder.build_load(p, "ptr");
+                    inner_call_args.push(this_val);
+                },
+                BasicValueEnum::StructValue(_) => panic!("Shimed function should not have struct value parameter"),
+                _ => unimplemented!()
+            }
+        }
+        match self.builder.build_call::<FunctionValue<'ctx>>(
+            f,
+            &inner_call_args[..],
+            "call"
+        ).try_as_basic_value().left() {
+            Some(v) => {
+                self.builder.build_return(Some(&v));
+            },
+            None => {
+                unimplemented!();
+            }
+        }
+        return wrapper_f;
+    }
 }
 
 #[cfg(test)]
@@ -1126,9 +1194,9 @@ mod tests {
         let mut builder = Builder::<&str>::new();
         let context = Context::create();
         let module = context.create_module("identity_bool");
-        // let execution_engine = module
-        //     .create_jit_execution_engine(OptimizationLevel::None)
-        //     .unwrap();
+        let execution_engine = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .unwrap();
         let mut codegen = Codegen::new(&context, module);
 
         // ValId construction
@@ -1143,7 +1211,7 @@ mod tests {
             r => panic!("Invalid constant generated: {:?}", r),
         };
 
-        f.print_to_stderr();
+        // f.print_to_stderr();
 
         let f_name = f
             .get_name()
@@ -1151,28 +1219,36 @@ mod tests {
             .expect("Generated name must be valid UTF-8");
         assert_eq!(f_name, "__lambda_0");
 
-        // #[repr(C)]
-        // #[derive(Debug, Copy, Clone, PartialEq)]
-        // struct _Product0 {
-        //     first: i8,
-        //     second: i16
-        // }
+        let shim_f = codegen.get_shim(f);
+
+        shim_f.print_to_stderr();
+        let shim_f_name = shim_f
+            .get_name()
+            .to_str()
+            .expect("Generated name must be valid UTF-8");
+        assert_eq!(shim_f_name, "__lambda_1");
+
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone, PartialEq)]
+        struct _Product0 {
+            first: i8,
+            second: i16
+        }
 
         // Jit
-        // let jit_f: JitFunction<unsafe extern "C" fn(_Product0) -> _Product0> =
-        //     unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+        let jit_f: JitFunction<unsafe extern "C" fn(*mut _Product0) -> *mut _Product0> =
+            unsafe { execution_engine.get_function(shim_f_name) }.expect("Valid IR generated");
 
-        // // Run
-        // for first in 0..10 {
-        //     for second in 0..10 {
-        //         let tuple = _Product0{first, second};
-        //         unsafe {
-        //             assert_eq!(
-        //                 jit_f.call(tuple),
-        //                 tuple
-        //             );
-        //         }
-        //     }
-        // }
+        // Run
+        for first in 0..10 {
+            for second in 0..10 {
+                let mut tuple = _Product0{first, second};
+                let ptr = &mut tuple;
+                unsafe {
+                    let result = jit_f.call(ptr);
+                    assert_eq!(*result, tuple);
+                }
+            }
+        }
     }
 }
