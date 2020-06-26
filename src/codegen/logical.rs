@@ -4,14 +4,28 @@ Code generation for logical `rain` expressions and types
 
 use super::*;
 use either::Either;
-use inkwell::values::IntValue;
-use rain_ir::primitive::logical::{self, Logical};
+use inkwell::values::{FunctionValue, IntValue};
+use rain_ir::primitive::logical::{self, Logical, LOGICAL_OP_TYS};
 use std::convert::TryInto;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a boolean value
     pub fn compile_bool(&mut self, b: bool) -> IntValue<'ctx> {
         self.context.bool_type().const_int(b as u64, false)
+    }
+
+    /// Compile a constant logical `rain` function
+    pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
+        match l.arity() {
+            1 => match l.data() {
+                0b00 => self.compile_constant(&LOGICAL_OP_TYS[0], &true.into()),
+                0b01 => unimplemented!(), // logical not
+                0b10 => unimplemented!(), // logical identity
+                0b11 => self.compile_constant(&LOGICAL_OP_TYS[1], &false.into()),
+                _ => unreachable!(),
+            },
+            _ => unimplemented!(),
+        }
     }
 
     /// Build the evaluation of a logical operation on an argument list in the current basic block

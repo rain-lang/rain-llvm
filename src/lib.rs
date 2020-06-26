@@ -205,51 +205,6 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    /// Compile a static-constant `rain` function
-    pub fn compile_constant(&mut self, _ty: &Pi, _val: &ValId) -> FunctionValue<'ctx> {
-        unimplemented!()
-    }
-
-    /// Compile a constant logical `rain` function
-    pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
-        match l.arity() {
-            1 => match l.data() {
-                0b00 => self.compile_constant(&LOGICAL_OP_TYS[0], &true.into()),
-                0b01 => unimplemented!(), // logical not
-                0b10 => unimplemented!(), // logical identity
-                0b11 => self.compile_constant(&LOGICAL_OP_TYS[1], &false.into()),
-                _ => unreachable!(),
-            },
-            _ => unimplemented!(),
-        }
-    }
-    /// Compile a boolean
-    pub fn compile_bool(&self, b: bool) -> IntValue<'ctx> {
-        self.context.bool_type().const_int(b as u64, false)
-    }
-
-    /// Compile a finite
-    pub fn compile_finite(&mut self, f: &Finite) -> Repr<'ctx> {
-        let value: u128 = f.0;
-        if value == 0 {
-            Repr::Empty
-        } else if value == 1 {
-            Repr::Prop
-        } else if value == 2 {
-            Repr::Type(self.context.bool_type().into())
-        } else if value < (1 << 8) {
-            Repr::Type(self.context.i8_type().into())
-        } else if value < (1 << 16) {
-            Repr::Type(self.context.i16_type().into())
-        } else if value < (1 << 32) {
-            Repr::Type(self.context.i32_type().into())
-        } else if value < (1 << 64) {
-            Repr::Type(self.context.i64_type().into())
-        } else {
-            Repr::Type(self.context.i128_type().into())
-        }
-    }
-
     /// Compile an index
     pub fn compile_index(&mut self, i: &Index) -> Const<'ctx> {
         let type_bound = (*i.get_ty()).0;
