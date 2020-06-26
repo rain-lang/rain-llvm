@@ -118,7 +118,18 @@ impl<'ctx> Codegen<'ctx> {
         if let Some(repr) = self.reprs.get(t) {
             return Ok(repr.clone());
         }
-        //TODO: this
-        unimplemented!("Compute non-boolean representation for rain type {}", t)
+        // General case
+        let r = match t.as_enum() {
+            ValueEnum::Finite(f) => self.repr_finite(f),
+            ValueEnum::BoolTy(_) => unreachable!(),
+            _ => unimplemented!("Representation for rain type {} is not implemented", t)
+        };
+        let old = self.reprs.insert(t.clone(), r.clone());
+        // We just checked above that the type has no representation!
+        // TODO: think about this: perhaps compiling the type has led to it getting a representation...
+        // consider an in-progress compilation map to avoid infinite loops...
+        // No wait, this should be prevented by the DAG-property of the `rain` graph...
+        debug_assert_eq!(old, None);
+        Ok(r)
     }
 }
