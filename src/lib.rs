@@ -9,10 +9,9 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicType, BasicTypeEnum, FunctionType, StructType};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{
-    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, 
-    InstructionValue, IntValue,
+    AnyValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionValue, IntValue,
 };
 use inkwell::AddressSpace;
 use rain_ir::function::{lambda::Lambda, pi::Pi};
@@ -28,6 +27,13 @@ use rain_ir::value::{
 };
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
+
+pub mod codegen;
+pub mod error;
+pub mod repr;
+
+use error::*;
+use repr::*;
 
 /**
 A local `rain` value
@@ -126,37 +132,6 @@ impl<'ctx> From<IntValue<'ctx>> for Const<'ctx> {
 }
 
 /**
-A representation of product
-*/
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProductRepr<'ctx> {
-    /// A mapping since we need to skip Repr::Unit
-    /// mapping[i] hold the position of ith element in the struct
-    pub mapping: Vec<Option<u32>>,
-    /// The actual representation
-    pub repr: StructType<'ctx>,
-}
-
-/**
-A representation for a `rain` type
-*/
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Repr<'ctx> {
-    /// As a basic LLVM type
-    Type(BasicTypeEnum<'ctx>),
-    /// As a function
-    Function(FunctionType<'ctx>),
-    /// As a compound
-    Product(ProductRepr<'ctx>),
-    /// As a mere proposition
-    Prop,
-    /// As the empty type
-    Empty,
-    /// An irrepresentable type
-    Irrep,
-}
-
-/**
 A function prototype
 */
 #[derive(Debug)]
@@ -233,21 +208,6 @@ pub struct Codegen<'ctx> {
     builder: Builder<'ctx>,
     /// The enclosing context of this codegen context
     context: &'ctx Context,
-}
-
-/// A `rain` code generation error
-#[derive(Debug, Clone)]
-pub enum Error {
-    /// Attempted to create a non-constant value as a constant
-    NotConst,
-    /// Attempted to create a non-constant value of an irrepresentable type
-    Irrepresentable,
-    /// Invalid function representation
-    InvalidFuncRepr,
-    /// An internal error
-    InternalError(&'static str),
-    /// Not implemented
-    NotImplemented(&'static str),
 }
 
 /// The default linkage of lambda values
@@ -795,33 +755,36 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Build a function call with arguments
     pub fn build_function_call(
-        &mut self, 
+        &mut self,
         ctx: &mut LocalCtx<'ctx>,
         f: &FunctionValue<'ctx>,
-        args: &[ValId]
+        args: &[ValId],
     ) -> Result<Local<'ctx>, Error> {
         let mut this_args: Vec<BasicValueEnum> = Vec::new();
         for arg in args {
             match self.build(ctx, arg)? {
                 Local::Contradiction => return Ok(Local::Contradiction),
                 Local::Irrep => return Err(Error::Irrepresentable),
-                Local::Unit => { 
-                    return Ok(Local::Unit); 
-                },
+                Local::Unit => {
+                    return Ok(Local::Unit);
+                }
                 Local::Value(v) => {
                     match v.try_into() {
                         Ok(this_v) => this_args.push(this_v),
-                        Err(_) => unimplemented!("Higher order functions not implemented")
+                        Err(_) => unimplemented!("Higher order functions not implemented"),
                     };
                 }
             }
         }
-        match self.builder
+        match self
+            .builder
             .build_call::<FunctionValue<'ctx>>(*f, &this_args[..], "call")
-            .try_as_basic_value().left() {
-                Some(b) => Ok(b.into()),
-                None => Ok(Local::Unit)
-            }
+            .try_as_basic_value()
+            .left()
+        {
+            Some(b) => Ok(b.into()),
+            None => Ok(Local::Unit),
+        }
     }
 
     /// Build a function application in a local context
@@ -882,15 +845,15 @@ impl<'ctx> Codegen<'ctx> {
             }
             ValueEnum::Lambda(l) => {
                 let compiled_lambda = match self.compile_lambda(l) {
-                    Ok(res) => {
-                        match res {
-                            Const::Function(f) => f,
-                            _ => panic!("Expected function, got something else")
-                        }
+                    Ok(res) => match res {
+                        Const::Function(f) => f,
+                        _ => panic!("Expected function, got something else"),
                     },
-                    Err(_) => unimplemented!("Non-constant lambda not implemented")
+                    Err(_) => unimplemented!("Non-constant lambda not implemented"),
                 };
-                Ok(self.build_function_call(ctx, &compiled_lambda, args)?.into())
+                Ok(self
+                    .build_function_call(ctx, &compiled_lambda, args)?
+                    .into())
             }
             _ => unimplemented!(),
         }
