@@ -16,12 +16,13 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Compile a constant logical `rain` function
     pub fn compile_logical(&mut self, l: &Logical) -> FunctionValue<'ctx> {
+        if let Some(b) = l.get_const() {
+            return self.compile_constant(&LOGICAL_OP_TYS[l.arity() as usize], &b.into());
+        }
         match l.arity() {
             1 => match l.data() {
-                0b00 => self.compile_constant(&LOGICAL_OP_TYS[0], &true.into()),
-                0b01 => unimplemented!(), // logical not
-                0b10 => unimplemented!(), // logical identity
-                0b11 => self.compile_constant(&LOGICAL_OP_TYS[1], &false.into()),
+                0b01 => unimplemented!("Logical not compilation"), // logical not
+                0b10 => unimplemented!("Logical identity compilation"), // logical identity
                 _ => unreachable!(),
             },
             _ => unimplemented!(),
