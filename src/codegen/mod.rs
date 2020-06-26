@@ -11,6 +11,12 @@ use std::ptr::NonNull;
 
 use super::repr::*;
 
+mod function;
+mod logical;
+mod repr;
+mod tuple;
+mod finite;
+
 /**
 A `rain` code generation context for a given module.
 
@@ -51,7 +57,7 @@ pub struct Codegen<'ctx> {
     /// ## Implementation Notes
     /// `rain` types are mapped to their, currently unique, LLVM representations. A more complex solution will probably have to
     /// be sought for closures, dependent types, and unions, but this will have to do for now.
-    /// 
+    ///
     /// ## Ideas
     /// This map may be partially or completely replaced with a per-value representation mapping. Alternatively, non-constant types
     /// could be mapped to unions here, though this would require mapping to the same union across different functions using the same
@@ -89,14 +95,14 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
     /// Get the compiled values in this context
-    /// 
+    ///
     /// See the documentation for the `vals` private member of `Codegen` for more information.
     #[inline]
     pub fn vals(&self) -> &HashMap<(*const NormalValue, ValId), Val<'ctx>> {
         &self.vals
     }
     /// Get the compiled representations in this context
-    /// 
+    ///
     /// See the documentation for the `reprs` private member of `Codegen` for more information.
     #[inline]
     pub fn reprs(&self) -> &HashMap<TypeId, Repr<'ctx>> {
