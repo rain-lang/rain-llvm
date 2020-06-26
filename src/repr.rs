@@ -4,6 +4,7 @@ LLVM representations for rain types and values
 
 use inkwell::types::{BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue};
+use std::rc::Rc;
 
 /**
 A representation of product
@@ -28,7 +29,7 @@ pub enum Repr<'ctx> {
     /// As a function
     Function(FunctionType<'ctx>),
     /// As a compound
-    Product(ProductRepr<'ctx>),
+    Product(Rc<ProductRepr<'ctx>>),
     /// As a mere proposition
     Prop,
     /// As the empty type

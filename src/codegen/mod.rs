@@ -1,21 +1,20 @@
 /*!
 The data-structures necessary for `rain` code generation
 */
+use super::repr::*;
+use crate::error::Error;
 use fxhash::FxHashMap as HashMap;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use rain_ir::value::{NormalValue, TypeId, ValId};
+use rain_ir::value::{NormalValue, TypeId, ValId, ValueEnum};
 use std::ptr::NonNull;
 
-use super::repr::*;
-
+mod finite;
 mod function;
 mod logical;
-mod repr;
 mod tuple;
-mod finite;
 
 /**
 A `rain` code generation context for a given module.
@@ -107,5 +106,19 @@ impl<'ctx> Codegen<'ctx> {
     #[inline]
     pub fn reprs(&self) -> &HashMap<TypeId, Repr<'ctx>> {
         &self.reprs
+    }
+    /// Get the representation for a given type, if any
+    pub fn repr(&mut self, t: &TypeId) -> Result<Repr<'ctx>, Error> {
+        // Special cases
+        match t.as_enum() {
+            ValueEnum::BoolTy(_) => return Ok(Repr::Type(self.context.bool_type().into())),
+            _ => {}
+        }
+        // Cached case
+        if let Some(repr) = self.reprs.get(t) {
+            return Ok(repr.clone());
+        }
+        //TODO: this
+        unimplemented!("Compute non-boolean representation for rain type {}", t)
     }
 }
