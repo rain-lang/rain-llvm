@@ -105,7 +105,7 @@ impl<'ctx> Codegen<'ctx> {
         // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
             let param = (
-                result_fn,
+                Some(result_fn),
                 ValId::from(
                     region
                         .clone()

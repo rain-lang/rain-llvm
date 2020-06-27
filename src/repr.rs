@@ -81,6 +81,13 @@ impl<'ctx> From<IntValue<'ctx>> for Val<'ctx> {
     }
 }
 
+impl<'ctx> From<FunctionValue<'ctx>> for Val<'ctx> {
+    #[inline]
+    fn from(f: FunctionValue<'ctx>) -> Val<'ctx> {
+        Val::Function(f.into())
+    }
+}
+
 impl<'ctx> TryFrom<Val<'ctx>> for IntValue<'ctx> {
     type Error = Val<'ctx>;
     #[inline]

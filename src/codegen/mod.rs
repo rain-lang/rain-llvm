@@ -9,6 +9,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::values::FunctionValue;
+use rain_ir::region::Regional;
 use rain_ir::value::{TypeId, ValId, ValueEnum};
 
 mod finite;
@@ -27,7 +28,7 @@ potential generalizations to a multi-threaded compilation model, with separate L
 #[derive(Debug)]
 pub struct Codegen<'ctx> {
     /// Compiled values
-    vals: HashMap<(FunctionValue<'ctx>, ValId), Val<'ctx>>,
+    vals: HashMap<(Option<FunctionValue<'ctx>>, ValId), Val<'ctx>>,
     /// A hashmap of contexts to the current basic block for each target function
     heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
     /// The current function being compiled, if any
@@ -62,7 +63,7 @@ impl<'ctx> Codegen<'ctx> {
     ///
     /// See the documentation for the `vals` private member of `Codegen` for more information.
     #[inline]
-    pub fn vals(&self) -> &HashMap<(FunctionValue<'ctx>, ValId), Val<'ctx>> {
+    pub fn vals(&self) -> &HashMap<(Option<FunctionValue<'ctx>>, ValId), Val<'ctx>> {
         &self.vals
     }
     /// Get the compiled representations in this context
@@ -99,6 +100,28 @@ impl<'ctx> Codegen<'ctx> {
     }
     /// Build a given value
     pub fn build(&mut self, v: &ValId) -> Result<Val<'ctx>, Error> {
-        unimplemented!("Value building unimplemented: v = {}", v)
+        let depth = v.depth();
+        let key = if depth == 0 {
+            (None, v.clone())
+        } else {
+            (self.curr, v.clone())
+        };
+        if let Some(val) = self.vals.get(&key) {
+            return Ok(val.clone());
+        }
+        let val = match v.as_enum() {
+            ValueEnum::Bool(b) => self.build_bool(*b).into(),
+            ValueEnum::Lambda(l) => self.build_lambda(l)?,
+            ValueEnum::Logical(l) => self.build_logical(l).into(),
+            ValueEnum::Sexpr(s) => self.build_sexpr(s)?,
+            ValueEnum::Tuple(t) => self.build_tuple(t)?,
+            ValueEnum::Product(p) => self.build_product(p)?,
+            ValueEnum::Parameter(_) => panic!("Unregistered parameter {}!", v),
+            ValueEnum::Finite(f) => self.build_finite(f),
+            ValueEnum::Index(i) => self.build_index(i),
+            _ => unimplemented!("Building value {}", v),
+        };
+        self.vals.insert(key, val.clone());
+        Ok(val)
     }
 }
