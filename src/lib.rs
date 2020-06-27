@@ -38,45 +38,6 @@ mod tests {
     use rain_ir::parser::builder::Builder;
 
     #[test]
-    fn identity_lambda_compiles_properly() {
-        // Setup
-        let mut builder = Builder::<&str>::new();
-        let context = Context::create();
-        let module = context.create_module("identity_bool");
-        let execution_engine = module
-            .create_jit_execution_engine(OptimizationLevel::None)
-            .unwrap();
-        let mut codegen = Codegen::new(&context, module);
-
-        // ValId construction
-        let (rest, id) = builder.parse_expr("|x: #bool| x").expect("Valid lambda");
-        assert_eq!(rest, "");
-
-        // Codegen
-        let f = match codegen.compile_const(&id).expect("Valid constant") {
-            Const::Function(f) => f,
-            r => panic!("Invalid constant generated: {:?}", r),
-        };
-
-        let f_name = f
-            .get_name()
-            .to_str()
-            .expect("Generated name must be valid UTF-8");
-        assert_eq!(f_name, "__lambda_0");
-
-        // Jit
-        let jit_f: JitFunction<unsafe extern "C" fn(bool) -> bool> =
-            unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
-
-        // Run
-        for x in [true, false].iter() {
-            unsafe {
-                assert_eq!(jit_f.call(*x), *x);
-            }
-        }
-    }
-
-    #[test]
     fn mux_lambda_compiles_properly() {
         // Setup
         let mut builder = Builder::<&str>::new();
