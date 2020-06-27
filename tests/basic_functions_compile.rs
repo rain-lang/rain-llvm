@@ -182,7 +182,7 @@ fn identity_product_compiles_properly() {
         .expect("Compilation works")
         .try_into()
         .expect("Compiles functions");
-    f.print_to_stderr();
+    //f.print_to_stderr();
 
     let _f_name = f
         .get_name()
@@ -213,3 +213,68 @@ fn identity_product_compiles_properly() {
     //     }
     // }
 }
+
+// #[test]
+// TODO: Waiting for bug to be fixed in rain side.
+// fn index_on_tuple_properly() {
+//     // Setup
+//     let mut builder = Builder::<&str>::new();
+//     let context = Context::create();
+//     let module = context.create_module("identity_bool");
+//     let execution_engine = module
+//         .create_jit_execution_engine(OptimizationLevel::None)
+//         .unwrap();
+//     let mut codegen = Codegen::new(&context, module);
+
+//     // ValId construction
+//     let (rest, id) = builder
+//         .parse_expr("|x: #product[#bool #bool]| (x #ix(2)[0])")
+//         .expect("Valid lambda");
+//     assert_eq!(rest, "");
+
+//     // Codegen
+//     let f = match codegen.compile_const(&id).expect("Valid constant") {
+//         Const::Function(f) => f,
+//         r => panic!("Invalid constant generated: {:?}", r),
+//     };
+
+//     // f.print_to_stderr();
+
+//     let f_name = f
+//         .get_name()
+//         .to_str()
+//         .expect("Generated name must be valid UTF-8");
+//     assert_eq!(f_name, "__lambda_0");
+
+//     let shim_f = codegen.get_shim(f);
+
+//     shim_f.print_to_stderr();
+//     let shim_f_name = shim_f
+//         .get_name()
+//         .to_str()
+//         .expect("Generated name must be valid UTF-8");
+//     assert_eq!(shim_f_name, "__lambda_1");
+
+//     #[repr(C)]
+//     #[derive(Debug, Copy, Clone, PartialEq)]
+//     struct _Product0 {
+//         first: bool,
+//         second: bool
+//     }
+
+//     // Jit
+//     let jit_f: JitFunction<unsafe extern "C" fn(*mut _Product0) -> bool> =
+//         unsafe { execution_engine.get_function(shim_f_name) }.expect("Valid IR generated");
+
+//     // Run
+//     for first in [true, false].iter() {
+//         for second in [true, false].iter() {
+//             let mut tuple = _Product0{first: *first, second: *second};
+//             let ptr = &mut tuple;
+//             unsafe {
+//                 let ret_val = jit_f.call(ptr);
+//                 assert_eq!(ret_val, *first);
+//             }
+//         }
+//     }
+// }

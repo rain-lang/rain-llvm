@@ -16,6 +16,7 @@ mod finite;
 mod function;
 mod logical;
 mod tuple;
+mod shim;
 
 /**
 A `rain` code generation context for a given module.
