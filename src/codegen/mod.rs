@@ -87,6 +87,7 @@ impl<'ctx> Codegen<'ctx> {
         // General case
         let r = match t.as_enum() {
             ValueEnum::Finite(f) => self.repr_finite(f),
+            ValueEnum::Product(p) => self.repr_product(p)?,
             ValueEnum::BoolTy(_) => unreachable!(),
             _ => unimplemented!("Representation for rain type {} is not implemented", t),
         };
