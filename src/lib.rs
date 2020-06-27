@@ -955,7 +955,9 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Implement FFI shim
-    /// T should be the return type of this function
+    /// The result function will have a additional argument of type pointer
+    /// to the original return type of f if the return type of f is a struct.
+    /// In that case, return result will be written to the pointer
     pub fn get_shim(&mut self, f: FunctionValue<'ctx>) -> FunctionValue{
         let f_type = f.get_type();
         let f_args_type = f_type.get_param_types();
@@ -971,12 +973,17 @@ impl<'ctx> Codegen<'ctx> {
                 _ => unimplemented!(),
             }
         }
+        let mut is_return_converted = false;
         let ret_type: BasicTypeEnum<'ctx> = match f_type.get_return_type() {
                 Some(t) => {
                     match t {
                         BasicTypeEnum::StructType(s) => {
                             // TODO: Address may need to be changed
-                            s.ptr_type(AddressSpace::Global).into()
+                            shim_args_type.push(
+                                s.ptr_type(AddressSpace::Global).into()
+                            );
+                            is_return_converted = true;
+                            self.context.i32_type().into()
                         }
                         BasicTypeEnum::IntType(i) => i.into(),
                         BasicTypeEnum::PointerType(p) => p.into(),
@@ -994,7 +1001,13 @@ impl<'ctx> Codegen<'ctx> {
         self.counter += 1;
         let this_block = self.context.append_basic_block(wrapper_f, "entry");
         self.builder.position_at_end(this_block);
-        let args = wrapper_f.get_params();
+        let args = if is_return_converted { 
+            let mut tmp = wrapper_f.get_params();
+            tmp.pop();
+            tmp
+        } else {
+            wrapper_f.get_params() 
+        };
         let mut inner_call_args: Vec<BasicValueEnum<'ctx>> = Vec::new();
         for arg_val in args {
             match arg_val {
@@ -1013,7 +1026,26 @@ impl<'ctx> Codegen<'ctx> {
             "call"
         ).try_as_basic_value().left() {
             Some(v) => {
-                self.builder.build_return(Some(&v));
+                if is_return_converted {
+                    let _wrapper_params_here = wrapper_f.get_params();
+                    match wrapper_f.get_params().pop() {
+                        Some(p) => match p {
+                            BasicValueEnum::PointerValue(p) => {
+                                self.builder.build_store(p, v);
+                                self.builder.build_return(
+                                    Some(&self.context.i32_type().const_int(0, false))
+                                );
+                            },
+                            _ => panic!("Last element of a Shim of a function with 
+                            a struct type return should have pointertype")
+                        },
+                        None => panic!("Shim of a function with 
+                        a struct type return should have argument")
+                    };
+                } else {
+                    self.builder.build_return(Some(&v));
+                }
+                
             },
             None => {
                 unimplemented!();
@@ -1236,7 +1268,7 @@ mod tests {
         }
 
         // Jit
-        let jit_f: JitFunction<unsafe extern "C" fn(*mut _Product0) -> *mut _Product0> =
+        let jit_f: JitFunction<unsafe extern "C" fn(*mut _Product0, *mut _Product0) -> i32> =
             unsafe { execution_engine.get_function(shim_f_name) }.expect("Valid IR generated");
 
         // Run
@@ -1244,9 +1276,16 @@ mod tests {
             for second in 0..10 {
                 let mut tuple = _Product0{first, second};
                 let ptr = &mut tuple;
+                let mut result = _Product0{
+                    first: 88,
+                    second: 48
+                };
+                let res_ptr = &mut result;
                 unsafe {
-                    let result = jit_f.call(ptr);
-                    assert_eq!(*result, tuple);
+                    let ret_val = jit_f.call(ptr, res_ptr);
+                    assert_eq!(ret_val, 0);
+                    assert_eq!(result.first, first);
+                    assert_eq!(result.second, second);
                 }
             }
         }
