@@ -165,7 +165,7 @@ fn identity_product_compiles_properly() {
     let mut builder = Builder::<&str>::new();
     let context = Context::create();
     let module = context.create_module("identity_bool");
-    let _execution_engine = module
+    let execution_engine = module
         .create_jit_execution_engine(OptimizationLevel::None)
         .unwrap();
     let mut codegen = Codegen::new(&context, module);
@@ -189,29 +189,43 @@ fn identity_product_compiles_properly() {
         .to_str()
         .expect("Generated name must be valid UTF-8");
 
-    // #[repr(C)]
-    // #[derive(Debug, Copy, Clone, PartialEq)]
-    // struct _Product0 {
-    //     first: i8,
-    //     second: i16
-    // }
+    let f_shim = codegen.build_shim(f, "shim", None);
+    let f_shim_name = f_shim
+        .get_name()
+        .to_str()
+        .expect("Generated name must be valid UTF-8");
+    
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    struct _Product0 {
+        first: i8,
+        second: i16
+    }
 
     // Jit
-    // let jit_f: JitFunction<unsafe extern "C" fn(_Product0) -> _Product0> =
-    //     unsafe { execution_engine.get_function(f_name) }.expect("Valid IR generated");
+    let jit_f: JitFunction<unsafe extern "C" fn(*mut _Product0, *mut _Product0) -> i32> =
+        unsafe { execution_engine.get_function(f_shim_name) }.expect("Valid IR generated");
 
-    // // Run
-    // for first in 0..10 {
-    //     for second in 0..10 {
-    //         let tuple = _Product0{first, second};
-    //         unsafe {
-    //             assert_eq!(
-    //                 jit_f.call(tuple),
-    //                 tuple
-    //             );
-    //         }
-    //     }
-    // }
+    // Run
+    for first in 0..10 {
+        for second in 0..10 {
+            let mut tuple = _Product0{
+                first, second
+            };
+            let ptr = &mut tuple;
+            let mut result = _Product0{
+                first: 10, 
+                second: 100,
+            };
+            let result_ptr = &mut result;
+            unsafe {
+                    let ret_val = jit_f.call(ptr, result_ptr);
+                    assert_eq!(ret_val, 0);
+                    assert_eq!(result.first, first);
+                    assert_eq!(result.second, second);
+            }
+        }
+    }
 }
 
 // #[test]
