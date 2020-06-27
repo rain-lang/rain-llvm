@@ -35,7 +35,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Create a function prototype for a lambda function, binding its parameters
     pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
         if lambda.depth() != 0 {
-            unimplemented!("Closures not implemented!")
+            unimplemented!("Closures not implemented for lambda {} (depth = {})!", lambda, lambda.depth())
         }
         let pi = lambda.get_ty();
         let region = pi.def_region();
@@ -246,6 +246,7 @@ impl<'ctx> Codegen<'ctx> {
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
         self.heads.insert(f, entry_bb);
+        self.builder.position_at_end(entry_bb);
         // Build a return value for the current function
         let retv = self.build(lambda.result());
         // If successful, build a return instruction

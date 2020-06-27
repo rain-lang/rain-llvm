@@ -98,3 +98,14 @@ impl<'ctx> TryFrom<Val<'ctx>> for IntValue<'ctx> {
         }
     }
 }
+
+impl<'ctx> TryFrom<Val<'ctx>> for FunctionValue<'ctx> {
+    type Error = Val<'ctx>;
+    #[inline]
+    fn try_from(v: Val<'ctx>) -> Result<FunctionValue<'ctx>, Val<'ctx>> {
+        match v {
+            Val::Function(f) => Ok(f),
+            v => Err(v),
+        }
+    }
+}
