@@ -1,4 +1,7 @@
 # rain-llvm
+[![Pipeline status](https://gitlab.com/rain-lang/rain-llvm/badges/master/pipeline.svg)](https://gitlab.com/rain-lang/rain-llvm)
+[![codecov](https://codecov.io/gl/rain-lang/rain-llvm/branch/master/graph/badge.svg)](https://codecov.io/gl/rain-lang/rain-llvm)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 `rain-llvm` is a crate implementing `rain` to LLVM codegeneration, i.e. the conversion of `rain` IR stored in memory to `llvm` IR. 
 We use [the experimental `inkwell` library](https://github.com/TheDan64/inkwell) to generate LLVM: 
