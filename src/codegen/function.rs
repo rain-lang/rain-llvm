@@ -35,7 +35,11 @@ impl<'ctx> Codegen<'ctx> {
     /// Create a function prototype for a lambda function, binding its parameters
     pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
         if lambda.depth() != 0 {
-            unimplemented!("Closures not implemented for lambda {} (depth = {})!", lambda, lambda.depth())
+            unimplemented!(
+                "Closures not implemented for lambda {} (depth = {})!",
+                lambda,
+                lambda.depth()
+            )
         }
         let pi = lambda.get_ty();
         let region = pi.def_region();
@@ -102,27 +106,30 @@ impl<'ctx> Codegen<'ctx> {
         );
         self.counter += 1;
 
+        self.curr_ix = self.local_arena.push(SymbolTable::default());
+
+        let this_table = match self.local_arena.get_mut(self.curr_ix) {
+            Some(t) => t,
+            None => panic!("A symbol table should be pushed when building a prototype"),
+        };
         // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
-            let param = (
-                Some(result_fn),
-                ValId::from(
-                    region
-                        .clone()
-                        .param(i)
-                        .expect("Iterated index is in bounds"),
-                ),
+            let valid = ValId::from(
+                region
+                    .clone()
+                    .param(i)
+                    .expect("Iterated index is in bounds"),
             );
             match ix {
                 PROP_IX => {
-                    self.vals.insert(param, Val::Unit);
+                    this_table.insert(valid, Val::Unit);
                 }
                 IRREP_IX => {
-                    self.vals.insert(param, Val::Irrep);
+                    this_table.insert(valid, Val::Irrep);
                 }
                 ix => {
-                    self.vals.insert(
-                        param,
+                    this_table.insert(
+                        valid,
                         Val::Value(
                             result_fn
                                 .get_nth_param(ix as u32)
@@ -235,14 +242,15 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Build a `rain` lambda function
     pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
+        // Caching the old one, new one will be set in build_prototype
+        let old_curr = self.curr;
+        let old_curr_ix = self.curr_ix;
         // Get the function to build
         let f = match self.build_prototype(lambda)? {
             Prototype::Function(f) => f,
             Prototype::Unit => return Ok(Val::Unit),
             Prototype::Irrep => return Ok(Val::Irrep),
         };
-        // Set the current function, caching the old one
-        let old_curr = self.curr.replace(f);
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
         self.heads.insert(f, entry_bb);
@@ -269,11 +277,12 @@ impl<'ctx> Codegen<'ctx> {
         };
         // Either way, reset the build head if necessary
         self.curr = old_curr;
+        self.curr_ix = old_curr_ix;
         if let Some(curr) = self.curr {
             if let Some(head) = self.heads.get(&curr) {
                 self.builder.position_at_end(*head)
             }
-        };
+        }
         // Bubble up retv errors here;
         retv_build?;
         // Otherwise, return successfully constructed function

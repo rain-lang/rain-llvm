@@ -3,7 +3,9 @@ The data-structures necessary for `rain` code generation
 */
 use super::repr::*;
 use crate::error::Error;
+use either::Either;
 use fxhash::FxHashMap as HashMap;
+use hayami::SymbolTable;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -11,12 +13,16 @@ use inkwell::module::Module;
 use inkwell::values::FunctionValue;
 use rain_ir::region::Regional;
 use rain_ir::value::{TypeId, ValId, ValueEnum};
+use arena::Arena;
 
 mod finite;
 mod function;
 mod logical;
 mod tuple;
 mod shim;
+
+// NOTE: this module is public to avoid unused code errors
+pub mod arena;
 
 /**
 A `rain` code generation context for a given module.
@@ -28,8 +34,14 @@ potential generalizations to a multi-threaded compilation model, with separate L
 */
 #[derive(Debug)]
 pub struct Codegen<'ctx> {
-    /// Compiled values
-    vals: HashMap<(Option<FunctionValue<'ctx>>, ValId), Val<'ctx>>,
+    /// Global rain values
+    globals: HashMap<ValId, Val<'ctx>>,
+    /// Indices for LLVM-function specific value symbol tables
+    local_ixs: HashMap<FunctionValue<'ctx>, usize>,
+    /// Arena for symbol tables
+    local_arena: Arena<'ctx>,
+    /// Current local scope
+    curr_ix: usize,
     /// A hashmap of contexts to the current basic block for each target function
     heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
     /// The current function being compiled, if any
@@ -50,7 +62,10 @@ impl<'ctx> Codegen<'ctx> {
     /// Create a new, empty code-generation context bound to a given LLVM `context` and `module`
     pub fn new(context: &'ctx Context, module: Module<'ctx>) -> Codegen<'ctx> {
         Codegen {
-            vals: HashMap::default(),
+            globals: HashMap::default(),
+            local_ixs: HashMap::default(),
+            local_arena: Arena::new(),
+            curr_ix: 0,
             heads: HashMap::default(),
             curr: None,
             reprs: HashMap::default(),
@@ -60,13 +75,15 @@ impl<'ctx> Codegen<'ctx> {
             context,
         }
     }
-    /// Get the compiled values in this context
+    
+    /// Get the global compiled `rain` values
     ///
-    /// See the documentation for the `vals` private member of `Codegen` for more information.
+    /// See the documentation for the `globals` private member of `Codegen` for more information.
     #[inline]
-    pub fn vals(&self) -> &HashMap<(Option<FunctionValue<'ctx>>, ValId), Val<'ctx>> {
-        &self.vals
+    pub fn globals(&self) -> &HashMap<ValId, Val<'ctx>> {
+        &self.globals
     }
+
     /// Get the compiled representations in this context
     ///
     /// See the documentation for the `reprs` private member of `Codegen` for more information.
@@ -103,14 +120,20 @@ impl<'ctx> Codegen<'ctx> {
     /// Build a given value
     pub fn build(&mut self, v: &ValId) -> Result<Val<'ctx>, Error> {
         let depth = v.depth();
-        let key = if depth == 0 {
-            (None, v.clone())
+        if depth == 0 {
+            if let Some(val) = self.globals().get(v) {
+                return Ok(val.clone());
+            }
         } else {
-            (self.curr, v.clone())
-        };
-        if let Some(val) = self.vals.get(&key) {
-            return Ok(val.clone());
+            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
+                if let Some(val) = this_table.get(v) {
+                    return Ok(val.clone());
+                }
+            } else {
+                panic!("A symbol table should be already pushed when compiling a value in function");
+            }
         }
+
         let val = match v.as_enum() {
             ValueEnum::Bool(b) => self.build_bool(*b).into(),
             ValueEnum::Lambda(l) => self.build_lambda(l)?,
@@ -123,7 +146,16 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Index(i) => self.build_index(i),
             _ => unimplemented!("Building value {}", v),
         };
-        self.vals.insert(key, val.clone());
+
+        if depth == 0 {
+            self.globals.insert(v.clone(), val.clone());
+        } else {
+            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
+                this_table.insert(v.clone(), val.clone());
+            } else {
+                panic!("A symbol table should be already pushed when compiling a value in function");
+            }
+        }
         Ok(val)
     }
 }
