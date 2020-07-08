@@ -20,7 +20,9 @@ mod function;
 mod logical;
 mod tuple;
 mod shim;
-mod arena;
+
+// NOTE: this module is public to avoid unused code errors
+pub mod arena;
 
 /**
 A `rain` code generation context for a given module.
@@ -38,8 +40,6 @@ pub struct Codegen<'ctx> {
     local_ixs: HashMap<FunctionValue<'ctx>, usize>,
     /// Arena for symbol tables
     local_arena: Arena<'ctx>,
-    /// The head of the free list for the arena
-    free_list_head: usize,
     /// Current local scope
     curr_ix: usize,
     /// A hashmap of contexts to the current basic block for each target function
@@ -65,7 +65,6 @@ impl<'ctx> Codegen<'ctx> {
             globals: HashMap::default(),
             local_ixs: HashMap::default(),
             local_arena: Arena::new(),
-            free_list_head: 0,
             curr_ix: 0,
             heads: HashMap::default(),
             curr: None,
@@ -126,7 +125,7 @@ impl<'ctx> Codegen<'ctx> {
                 return Ok(val.clone());
             }
         } else {
-            if let Some(this_table) = self.local_arena.get_mut_table(self.curr_ix) {
+            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
                 if let Some(val) = this_table.get(v) {
                     return Ok(val.clone());
                 }
@@ -151,7 +150,7 @@ impl<'ctx> Codegen<'ctx> {
         if depth == 0 {
             self.globals.insert(v.clone(), val.clone());
         } else {
-            if let Some(this_table) = self.local_arena.get_mut_table(self.curr_ix) {
+            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
                 this_table.insert(v.clone(), val.clone());
             } else {
                 panic!("A symbol table should be already pushed when compiling a value in function");

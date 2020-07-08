@@ -35,7 +35,11 @@ impl<'ctx> Codegen<'ctx> {
     /// Create a function prototype for a lambda function, binding its parameters
     pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
         if lambda.depth() != 0 {
-            unimplemented!("Closures not implemented for lambda {} (depth = {})!", lambda, lambda.depth())
+            unimplemented!(
+                "Closures not implemented for lambda {} (depth = {})!",
+                lambda,
+                lambda.depth()
+            )
         }
         let pi = lambda.get_ty();
         let region = pi.def_region();
@@ -102,36 +106,20 @@ impl<'ctx> Codegen<'ctx> {
         );
         self.counter += 1;
 
-        if self.free_list_head < self.local_arena.len() {
-            let new_free = match self.local_arena.get(self.free_list_head).unwrap() {
-                Either::Left(_) => panic!("Free list head must not be a table"),
-                Either::Right(i) => *i
-            };
-            self.local_arena.set(
-                self.free_list_head, 
-                Either::Left(SymbolTable::default())
-            );
-            self.curr_ix = self.free_list_head;
-            self.free_list_head = new_free;
-        } else {
-            self.local_arena.push_table(SymbolTable::default());
-            self.curr_ix = self.local_arena.len() - 1;
-            self.free_list_head = self.local_arena.len();
-        }
+        self.curr_ix = self.local_arena.push(SymbolTable::default());
 
-        let this_table = match self.local_arena.get_mut_table(self.curr_ix) {
+        let this_table = match self.local_arena.get_mut(self.curr_ix) {
             Some(t) => t,
-            None => panic!("A symbol table should be pushed when building a prototype")
+            None => panic!("A symbol table should be pushed when building a prototype"),
         };
         // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
-            let valid = 
-                ValId::from(
-                    region
-                        .clone()
-                        .param(i)
-                        .expect("Iterated index is in bounds"),
-                );
+            let valid = ValId::from(
+                region
+                    .clone()
+                    .param(i)
+                    .expect("Iterated index is in bounds"),
+            );
             match ix {
                 PROP_IX => {
                     this_table.insert(valid, Val::Unit);
@@ -140,7 +128,8 @@ impl<'ctx> Codegen<'ctx> {
                     this_table.insert(valid, Val::Irrep);
                 }
                 ix => {
-                    this_table.insert(valid,
+                    this_table.insert(
+                        valid,
                         Val::Value(
                             result_fn
                                 .get_nth_param(ix as u32)
@@ -262,7 +251,6 @@ impl<'ctx> Codegen<'ctx> {
             Prototype::Unit => return Ok(Val::Unit),
             Prototype::Irrep => return Ok(Val::Irrep),
         };
-        
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
         self.heads.insert(f, entry_bb);
@@ -294,9 +282,7 @@ impl<'ctx> Codegen<'ctx> {
             if let Some(head) = self.heads.get(&curr) {
                 self.builder.position_at_end(*head)
             }
-        } else {
-            self.curr_ix = self.local_arena.len();
-        };
+        }
         // Bubble up retv errors here;
         retv_build?;
         // Otherwise, return successfully constructed function
