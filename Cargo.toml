@@ -5,6 +5,7 @@ authors = ["Jad Ghalayini <jad.ghalayini@hotmail.com>"]
 edition = "2018"
 
 [dependencies]
+hayami = { git = "https://gitlab.com/rain-lang/hayami.git" }
 rain-ir = { git = "https://gitlab.com/rain-lang/rain-ir.git" }
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm10-0" }
 fxhash = "^0.2"

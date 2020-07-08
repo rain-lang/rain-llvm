@@ -102,27 +102,45 @@ impl<'ctx> Codegen<'ctx> {
         );
         self.counter += 1;
 
+        if self.free_list_head < self.local_arena.len() {
+            let new_free = match self.local_arena.get(self.free_list_head).unwrap() {
+                Either::Left(_) => panic!("Free list head must not be a table"),
+                Either::Right(i) => *i
+            };
+            self.local_arena.set(
+                self.free_list_head, 
+                Either::Left(SymbolTable::default())
+            );
+            self.curr_ix = self.free_list_head;
+            self.free_list_head = new_free;
+        } else {
+            self.local_arena.push_table(SymbolTable::default());
+            self.curr_ix = self.local_arena.len() - 1;
+            self.free_list_head = self.local_arena.len();
+        }
+
+        let this_table = match self.local_arena.get_mut_table(self.curr_ix) {
+            Some(t) => t,
+            None => panic!("A symbol table should be pushed when building a prototype")
+        };
         // Bind parameters
         for (i, ix) in input_ixes.iter().copied().enumerate() {
-            let param = (
-                Some(result_fn),
+            let valid = 
                 ValId::from(
                     region
                         .clone()
                         .param(i)
                         .expect("Iterated index is in bounds"),
-                ),
-            );
+                );
             match ix {
                 PROP_IX => {
-                    self.vals.insert(param, Val::Unit);
+                    this_table.insert(valid, Val::Unit);
                 }
                 IRREP_IX => {
-                    self.vals.insert(param, Val::Irrep);
+                    this_table.insert(valid, Val::Irrep);
                 }
                 ix => {
-                    self.vals.insert(
-                        param,
+                    this_table.insert(valid,
                         Val::Value(
                             result_fn
                                 .get_nth_param(ix as u32)
@@ -235,14 +253,32 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Build a `rain` lambda function
     pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
+        // Caching the old one, new one will be set in build_prototype
+        let old_curr = self.curr;
+        let old_curr_ix = self.curr_ix;
         // Get the function to build
         let f = match self.build_prototype(lambda)? {
             Prototype::Function(f) => f,
             Prototype::Unit => return Ok(Val::Unit),
             Prototype::Irrep => return Ok(Val::Irrep),
         };
-        // Set the current function, caching the old one
-        let old_curr = self.curr.replace(f);
+        
+        // if self.free_list_head < self.local_arena.len() {
+        //     let new_free = match self.local_arena.get(self.free_list_head).unwrap() {
+        //         Either::Left(_) => panic!("Free list head must not be a table"),
+        //         Either::Right(i) => *i
+        //     };
+        //     self.local_arena.set(
+        //         self.free_list_head, 
+        //         Either::Left(SymbolTable::default())
+        //     );
+        //     self.curr_ix = self.free_list_head;
+        //     self.free_list_head = new_free;
+        // } else {
+        //     self.local_arena.push_table(SymbolTable::default());
+        //     self.curr_ix = self.local_arena.len() - 1;
+        //     self.free_list_head = self.local_arena.len();
+        // }
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
         self.heads.insert(f, entry_bb);
@@ -269,10 +305,13 @@ impl<'ctx> Codegen<'ctx> {
         };
         // Either way, reset the build head if necessary
         self.curr = old_curr;
+        self.curr_ix = old_curr_ix;
         if let Some(curr) = self.curr {
             if let Some(head) = self.heads.get(&curr) {
                 self.builder.position_at_end(*head)
             }
+        } else {
+            self.curr_ix = self.local_arena.len();
         };
         // Bubble up retv errors here;
         retv_build?;
