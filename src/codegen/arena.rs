@@ -24,10 +24,6 @@ impl<'ctx> Arena<'ctx> {
         }
     }
 
-    pub fn set(&mut self, ix: usize, payload: Either<SymbolTable<ValId, Val<'ctx>>, usize>) {
-        self.0[ix] = payload;
-    }
-
     pub fn get(&mut self, ix: usize) -> Option<&Either<SymbolTable<ValId, Val<'ctx>>, usize>> {
         if ix >= self.0.len() {
             None
@@ -36,12 +32,15 @@ impl<'ctx> Arena<'ctx> {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub fn set(&mut self, ix: usize, payload: Either<SymbolTable<ValId, Val<'ctx>>, usize>) {
+        self.0[ix] = payload;
     }
 
     pub fn push_table(&mut self, table: SymbolTable<ValId, Val<'ctx>>) {
         self.0.push(Either::Left(table));
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }

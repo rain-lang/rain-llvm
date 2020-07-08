@@ -263,22 +263,6 @@ impl<'ctx> Codegen<'ctx> {
             Prototype::Irrep => return Ok(Val::Irrep),
         };
         
-        // if self.free_list_head < self.local_arena.len() {
-        //     let new_free = match self.local_arena.get(self.free_list_head).unwrap() {
-        //         Either::Left(_) => panic!("Free list head must not be a table"),
-        //         Either::Right(i) => *i
-        //     };
-        //     self.local_arena.set(
-        //         self.free_list_head, 
-        //         Either::Left(SymbolTable::default())
-        //     );
-        //     self.curr_ix = self.free_list_head;
-        //     self.free_list_head = new_free;
-        // } else {
-        //     self.local_arena.push_table(SymbolTable::default());
-        //     self.curr_ix = self.local_arena.len() - 1;
-        //     self.free_list_head = self.local_arena.len();
-        // }
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
         self.heads.insert(f, entry_bb);

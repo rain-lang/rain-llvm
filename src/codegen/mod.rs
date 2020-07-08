@@ -85,18 +85,6 @@ impl<'ctx> Codegen<'ctx> {
         &self.globals
     }
 
-    /// Get the current local symbol table
-    // fn locals(&mut self) -> Option<&mut SymbolTable<ValId, Val<'ctx>>> {
-    //     if self.curr_ix >= self.local_arena.len() {
-    //         None
-    //     } else {
-    //         match &mut self.local_arena[self.curr_ix] {
-    //             Either::Left(t) => Some(t),
-    //             Either::Right(_) => None
-    //         }
-    //     }
-    // }
-
     /// Get the compiled representations in this context
     ///
     /// See the documentation for the `reprs` private member of `Codegen` for more information.
@@ -146,14 +134,7 @@ impl<'ctx> Codegen<'ctx> {
                 panic!("A symbol table should be already pushed when compiling a value in function");
             }
         }
-        // let key = if depth == 0 {
-        //     (None, v.clone())
-        // } else {
-        //     (self.curr, v.clone())
-        // };
-        // if let Some(val) = self.vals.get(&key) {
-        //     return Ok(val.clone());
-        // }
+
         let val = match v.as_enum() {
             ValueEnum::Bool(b) => self.build_bool(*b).into(),
             ValueEnum::Lambda(l) => self.build_lambda(l)?,
@@ -166,7 +147,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Index(i) => self.build_index(i),
             _ => unimplemented!("Building value {}", v),
         };
-        // self.vals.insert(key, val.clone());
+
         if depth == 0 {
             self.globals.insert(v.clone(), val.clone());
         } else {
