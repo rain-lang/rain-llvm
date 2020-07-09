@@ -294,6 +294,11 @@ impl<'ctx> Codegen<'ctx> {
         }
         // Bubble up retv errors here;
         retv_build?;
+        // Remove function from table and free the index in arena.
+        if let Some((i, _)) = self.local_ixs.remove(&f) {
+            self.local_arena.free(i);
+        }
+
         // Otherwise, return successfully constructed function
         Ok(Val::Function(f))
     }
