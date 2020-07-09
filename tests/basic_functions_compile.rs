@@ -2,7 +2,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine::JitFunction;
 use inkwell::values::{FunctionValue, IntValue};
 use inkwell::OptimizationLevel;
-use rain_ir::parser::builder::Builder;
+use rain_ir::builder::Builder;
 use rain_llvm::codegen::Codegen;
 use std::convert::TryInto;
 
