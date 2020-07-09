@@ -36,14 +36,14 @@ potential generalizations to a multi-threaded compilation model, with separate L
 pub struct Codegen<'ctx> {
     /// Global rain values
     globals: HashMap<ValId, Val<'ctx>>,
-    /// Indices for LLVM-function specific value symbol tables
-    local_ixs: HashMap<FunctionValue<'ctx>, usize>,
+    /// Indices and basic blocks for LLVM-function specific value symbol tables
+    local_ixs: HashMap<FunctionValue<'ctx>, (usize, Option<BasicBlock<'ctx>>)>,
     /// Arena for symbol tables
     local_arena: Arena<'ctx>,
     /// Current local scope
     curr_ix: usize,
     /// A hashmap of contexts to the current basic block for each target function
-    heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
+    // heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
     /// The current function being compiled, if any
     curr: Option<FunctionValue<'ctx>>,
     /// Type representations
@@ -66,7 +66,6 @@ impl<'ctx> Codegen<'ctx> {
             local_ixs: HashMap::default(),
             local_arena: Arena::new(),
             curr_ix: 0,
-            heads: HashMap::default(),
             curr: None,
             reprs: HashMap::default(),
             counter: 0,
