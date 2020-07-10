@@ -42,8 +42,6 @@ pub struct Codegen<'ctx> {
     local_arena: Arena<'ctx>,
     /// Current local scope
     curr_ix: usize,
-    /// A hashmap of contexts to the current basic block for each target function
-    // heads: HashMap<FunctionValue<'ctx>, BasicBlock<'ctx>>,
     /// The current function being compiled, if any
     curr: Option<FunctionValue<'ctx>>,
     /// Type representations

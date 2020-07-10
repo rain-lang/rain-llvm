@@ -288,9 +288,6 @@ impl<'ctx> Codegen<'ctx> {
                     self.builder.position_at_end(*block);
                 }
             }
-            // if let Some(head) = self.heads.get(&curr) {
-            //     self.builder.position_at_end(*head)
-            // }
         }
         // Bubble up retv errors here;
         retv_build?;
