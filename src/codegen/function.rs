@@ -107,6 +107,7 @@ impl<'ctx> Codegen<'ctx> {
         self.counter += 1;
 
         self.curr_ix = self.local_arena.push(SymbolTable::default());
+        self.local_ixs.insert(result_fn, (self.curr_ix, None));
 
         let this_table = match self.local_arena.get_mut(self.curr_ix) {
             Some(t) => t,
@@ -253,7 +254,10 @@ impl<'ctx> Codegen<'ctx> {
         };
         // Add an entry basic block, registering it
         let entry_bb = self.context.append_basic_block(f, "entry");
-        self.heads.insert(f, entry_bb);
+        self.local_ixs.insert(
+            f, 
+            (self.curr_ix, Some(entry_bb))
+        );
         self.builder.position_at_end(entry_bb);
         // Build a return value for the current function
         let retv = self.build(lambda.result());
@@ -279,12 +283,19 @@ impl<'ctx> Codegen<'ctx> {
         self.curr = old_curr;
         self.curr_ix = old_curr_ix;
         if let Some(curr) = self.curr {
-            if let Some(head) = self.heads.get(&curr) {
-                self.builder.position_at_end(*head)
+            if let Some((_, b)) = self.local_ixs.get(&curr) {
+                if let Some(block) = b {
+                    self.builder.position_at_end(*block);
+                }
             }
         }
         // Bubble up retv errors here;
         retv_build?;
+        // Remove function from table and free the index in arena.
+        if let Some((i, _)) = self.local_ixs.remove(&f) {
+            self.local_arena.free(i);
+        }
+
         // Otherwise, return successfully constructed function
         Ok(Val::Function(f))
     }

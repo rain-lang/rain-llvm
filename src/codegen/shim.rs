@@ -107,8 +107,10 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
         if let Some(curr) = self.curr {
-            if let Some(head) = self.heads.get(&curr) {
-                self.builder.position_at_end(*head);
+            if let Some((_, b)) = self.local_ixs.get(&curr) {
+                if let Some(block) = b {
+                    self.builder.position_at_end(*block);
+                }
             }
         }
         return wrapper_f;
