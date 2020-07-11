@@ -40,6 +40,7 @@ before_script:
 
 .only_settings: &only_settings
   - master@rain-lang/rain-llvm #TODO: think about this
+  - merge_requests
 
 .cargo_update: &cargo_update
     # XXX(minver<1.41.0): No backwards compatibility is provided. Instead, it
