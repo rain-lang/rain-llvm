@@ -32,118 +32,118 @@ impl<'ctx> Codegen<'ctx> {
         unimplemented!()
     }
 
-    /// Create a function prototype for a lambda function, binding its parameters
-    pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
-        if lambda.depth() != 0 {
-            unimplemented!(
-                "Closures not implemented for lambda {} (depth = {})!",
-                lambda,
-                lambda.depth()
-            )
-        }
-        let pi = lambda.get_ty();
-        let region = pi.def_region();
-        let result = pi.result();
-        if result.depth() != 0 {
-            return Err(Error::NotImplemented(
-                "Non-constant return types for pi functions",
-            ));
-        }
-        let result_repr = match self.repr(result)? {
-            Repr::Type(t) => t,
-            Repr::Function(_f) => unimplemented!(),
-            Repr::Empty | Repr::Prop => return Ok(Prototype::Unit),
-            Repr::Irrep => return Ok(Prototype::Irrep),
-            Repr::Product(p) => p.repr.into(),
-        };
-        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
-        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
-        const PROP_IX: isize = -1;
-        const IRREP_IX: isize = -2;
-        let mut has_empty = false;
+    // /// Create a function prototype for a lambda function, binding its parameters
+    // pub fn build_prototype(&mut self, lambda: &Lambda) -> Result<Prototype<'ctx>, Error> {
+    //     if lambda.depth() != 0 {
+    //         unimplemented!(
+    //             "Closures not implemented for lambda {} (depth = {})!",
+    //             lambda,
+    //             lambda.depth()
+    //         )
+    //     }
+    //     let pi = lambda.get_ty();
+    //     let region = pi.def_region();
+    //     let result = pi.result();
+    //     if result.depth() != 0 {
+    //         return Err(Error::NotImplemented(
+    //             "Non-constant return types for pi functions",
+    //         ));
+    //     }
+    //     let result_repr = match self.repr(result)? {
+    //         Repr::Type(t) => t,
+    //         Repr::Function(_f) => unimplemented!(),
+    //         Repr::Empty | Repr::Prop => return Ok(Prototype::Unit),
+    //         Repr::Irrep => return Ok(Prototype::Irrep),
+    //         Repr::Product(p) => p.repr.into(),
+    //     };
+    //     let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
+    //     let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
+    //     const PROP_IX: isize = -1;
+    //     const IRREP_IX: isize = -2;
+    //     let mut has_empty = false;
 
-        for input_ty in region.iter() {
-            match self.repr(input_ty)? {
-                Repr::Type(t) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(t);
-                    }
-                }
-                Repr::Function(_) => unimplemented!(),
-                Repr::Prop => {
-                    if !has_empty {
-                        input_ixes.push(PROP_IX);
-                    }
-                }
-                Repr::Empty => has_empty = true,
-                Repr::Irrep => {
-                    if !has_empty {
-                        input_ixes.push(IRREP_IX);
-                    }
-                }
-                Repr::Product(p) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(p.repr.into());
-                    }
-                }
-            }
-        }
+    //     for input_ty in region.iter() {
+    //         match self.repr(input_ty)? {
+    //             Repr::Type(t) => {
+    //                 if !has_empty {
+    //                     input_ixes.push(input_reprs.len() as isize);
+    //                     input_reprs.push(t);
+    //                 }
+    //             }
+    //             Repr::Function(_) => unimplemented!(),
+    //             Repr::Prop => {
+    //                 if !has_empty {
+    //                     input_ixes.push(PROP_IX);
+    //                 }
+    //             }
+    //             Repr::Empty => has_empty = true,
+    //             Repr::Irrep => {
+    //                 if !has_empty {
+    //                     input_ixes.push(IRREP_IX);
+    //                 }
+    //             }
+    //             Repr::Product(p) => {
+    //                 if !has_empty {
+    //                     input_ixes.push(input_reprs.len() as isize);
+    //                     input_reprs.push(p.repr.into());
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        if has_empty {
-            return Ok(Prototype::Unit);
-        }
+    //     if has_empty {
+    //         return Ok(Prototype::Unit);
+    //     }
 
-        // Construct a function type
-        let result_ty = result_repr.fn_type(&input_reprs, false);
+    //     // Construct a function type
+    //     let result_ty = result_repr.fn_type(&input_reprs, false);
 
-        // Construct an empty function of a given type
-        let result_fn = self.module.add_function(
-            &format!("__lambda_{}", self.counter),
-            result_ty,
-            DEFAULT_LAMBDA_LINKAGE,
-        );
-        self.counter += 1;
+    //     // Construct an empty function of a given type
+    //     let result_fn = self.module.add_function(
+    //         &format!("__lambda_{}", self.counter),
+    //         result_ty,
+    //         DEFAULT_LAMBDA_LINKAGE,
+    //     );
+    //     self.counter += 1;
 
-        self.curr_ix = self.local_arena.push(SymbolTable::default());
-        self.local_ixs.insert(result_fn, (self.curr_ix, None));
+    //     self.curr_ix = self.local_arena.push(SymbolTable::default());
+    //     self.local_ixs.insert(result_fn, (self.curr_ix, None));
 
-        let this_table = match self.local_arena.get_mut(self.curr_ix) {
-            Some(t) => t,
-            None => panic!("A symbol table should be pushed when building a prototype"),
-        };
-        // Bind parameters
-        for (i, ix) in input_ixes.iter().copied().enumerate() {
-            let valid = ValId::from(
-                region
-                    .clone()
-                    .param(i)
-                    .expect("Iterated index is in bounds"),
-            );
-            match ix {
-                PROP_IX => {
-                    this_table.insert(valid, Val::Unit);
-                }
-                IRREP_IX => {
-                    this_table.insert(valid, Val::Irrep);
-                }
-                ix => {
-                    this_table.insert(
-                        valid,
-                        Val::Value(
-                            result_fn
-                                .get_nth_param(ix as u32)
-                                .expect("Index in vector is in bounds")
-                                .into(),
-                        ),
-                    );
-                }
-            }
-        }
+    //     let this_table = match self.local_arena.get_mut(self.curr_ix) {
+    //         Some(t) => t,
+    //         None => panic!("A symbol table should be pushed when building a prototype"),
+    //     };
+    //     // Bind parameters
+    //     for (i, ix) in input_ixes.iter().copied().enumerate() {
+    //         let valid = ValId::from(
+    //             region
+    //                 .clone()
+    //                 .param(i)
+    //                 .expect("Iterated index is in bounds"),
+    //         );
+    //         match ix {
+    //             PROP_IX => {
+    //                 this_table.insert(valid, Val::Unit);
+    //             }
+    //             IRREP_IX => {
+    //                 this_table.insert(valid, Val::Irrep);
+    //             }
+    //             ix => {
+    //                 this_table.insert(
+    //                     valid,
+    //                     Val::Value(
+    //                         result_fn
+    //                             .get_nth_param(ix as u32)
+    //                             .expect("Index in vector is in bounds")
+    //                             .into(),
+    //                     ),
+    //                 );
+    //             }
+    //         }
+    //     }
 
-        Ok(Prototype::Function(result_fn))
-    }
+    //     Ok(Prototype::Function(result_fn))
+    // }
     /// Build a function call with arguments
     pub fn build_function_call(
         &mut self,
@@ -241,26 +241,144 @@ impl<'ctx> Codegen<'ctx> {
         self.build_app(&s[0], &s.as_slice()[1..])
     }
 
+    /// Build an inline lambda function with given parameter_values
+    pub fn build_lambda_inline(&mut self, lambda: &Lambda, parameter_values: &[Val<'ctx>]) -> Result<Val<'ctx>, Error> {
+        let this_table = match self.local_arena.get_mut(self.curr_ix) {
+            Some(t) => t,
+            None => panic!("A symbol table should be pushed when building a prototype"),
+        };
+        for (i, val) in parameter_values.iter().enumerate() {
+            let valid = ValId::from(
+                lambda.get_ty().def_region()
+                    .clone()
+                    .param(i)
+                    .expect("Iterated index is in bounds"),
+            );
+            this_table.insert(valid, val.clone());
+        }
+        return self.build(lambda.result());
+    }
+
+
     /// Build a `rain` lambda function
     pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
-        // Caching the old one, new one will be set in build_prototype
+        if lambda.depth() != 0 {
+            unimplemented!(
+                "Closures not implemented for lambda {} (depth = {})!",
+                lambda,
+                lambda.depth()
+            )
+        }
+        let pi = lambda.get_ty();
+        let region = pi.def_region();
+        let result = pi.result();
+        if result.depth() != 0 {
+            return Err(Error::NotImplemented(
+                "Non-constant return types for pi functions",
+            ));
+        }
+        let result_repr = match self.repr(result)? {
+            Repr::Type(t) => t,
+            Repr::Function(_f) => unimplemented!(),
+            Repr::Empty | Repr::Prop => return Ok(Val::Unit),
+            Repr::Irrep => return Ok(Val::Irrep),
+            Repr::Product(p) => p.repr.into(),
+        };
+        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
+        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
+        const PROP_IX: isize = -1;
+        const IRREP_IX: isize = -2;
+        let mut has_empty = false;
+
+        for input_ty in region.iter() {
+            match self.repr(input_ty)? {
+                Repr::Type(t) => {
+                    if !has_empty {
+                        input_ixes.push(input_reprs.len() as isize);
+                        input_reprs.push(t);
+                    }
+                }
+                Repr::Function(_) => unimplemented!(),
+                Repr::Prop => {
+                    if !has_empty {
+                        input_ixes.push(PROP_IX);
+                    }
+                }
+                Repr::Empty => has_empty = true,
+                Repr::Irrep => {
+                    if !has_empty {
+                        input_ixes.push(IRREP_IX);
+                    }
+                }
+                Repr::Product(p) => {
+                    if !has_empty {
+                        input_ixes.push(input_reprs.len() as isize);
+                        input_reprs.push(p.repr.into());
+                    }
+                }
+            }
+        }
+
+        if has_empty {
+            return Ok(Val::Unit);
+        }
+
+        // Construct a function type
+        let result_ty = result_repr.fn_type(&input_reprs, false);
+
+        // Construct an empty function of a given type
+        let result_fn = self.module.add_function(
+            &format!("__lambda_{}", self.counter),
+            result_ty,
+            DEFAULT_LAMBDA_LINKAGE,
+        );
+        self.counter += 1;
+
+        self.curr_ix = self.local_arena.push(SymbolTable::default());
+        self.local_ixs.insert(result_fn, (self.curr_ix, None));
+
+        // let this_table = match self.local_arena.get_mut(self.curr_ix) {
+        //     Some(t) => t,
+        //     None => panic!("A symbol table should be pushed when building a prototype"),
+        // };
+
+        let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
+        // Bind parameters
+        for ix in input_ixes.iter().copied() {
+            match ix {
+                PROP_IX => {
+                    parameter_values.push(Val::Unit);
+                }
+                IRREP_IX => {
+                    parameter_values.push(Val::Irrep);
+                }
+                ix => {
+                    parameter_values.push(
+                        Val::Value(
+                            result_fn
+                                .get_nth_param(ix as u32)
+                                .expect("Index in vector is in bounds")
+                                .into(),
+                        )
+                    );
+                }
+            }
+        }
+
+        // Caching the old one curr and curr_ix
         let old_curr = self.curr;
         let old_curr_ix = self.curr_ix;
-        // Get the function to build
-        let f = match self.build_prototype(lambda)? {
-            Prototype::Function(f) => f,
-            Prototype::Unit => return Ok(Val::Unit),
-            Prototype::Irrep => return Ok(Val::Irrep),
-        };
+
         // Add an entry basic block, registering it
-        let entry_bb = self.context.append_basic_block(f, "entry");
+        let entry_bb = self.context.append_basic_block(result_fn, "entry");
         self.local_ixs.insert(
-            f, 
+            result_fn, 
             (self.curr_ix, Some(entry_bb))
         );
         self.builder.position_at_end(entry_bb);
         // Build a return value for the current function
-        let retv = self.build(lambda.result());
+        // let retv = self.build(lambda.result());
+        let retv = self.build_lambda_inline(lambda, &parameter_values[..]);
         // If successful, build a return instruction
         let retv_build = match retv {
             Ok(retv) => match retv {
@@ -292,11 +410,11 @@ impl<'ctx> Codegen<'ctx> {
         // Bubble up retv errors here;
         retv_build?;
         // Remove function from table and free the index in arena.
-        if let Some((i, _)) = self.local_ixs.remove(&f) {
+        if let Some((i, _)) = self.local_ixs.remove(&result_fn) {
             self.local_arena.free(i);
         }
 
         // Otherwise, return successfully constructed function
-        Ok(Val::Function(f))
+        Ok(Val::Function(result_fn))
     }
 }
