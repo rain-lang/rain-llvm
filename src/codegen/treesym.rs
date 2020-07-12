@@ -1,7 +1,7 @@
 /*!
 A symbol table implemented with hash trees, supporting saving snapshots
 */
-use im_rc::HashMap;
+use im_rc::{Vector, HashMap};
 use std::hash::Hash;
 
 /// A *local* symbol table implemented with hash trees, supporting level intermixing
@@ -19,8 +19,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LocalTable<K, V> {
             prev: Vec::new()
         }
     }
-    /// Insert a new element into the symbol table at the current level, returning the old value there, if any.
-    /// Pass a flag if these elements actually belong at a lower level of the symbol table.
+    /// Insert a new element into the symbol table at a given level, and every level above it
     pub fn insert(&mut self, key: K, value: V, lower: bool) -> Option<V> {
         if lower {
             self.prev.push((key.clone(), value.clone()))
