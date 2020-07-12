@@ -9,3 +9,12 @@ use std::hash::Hash;
 pub struct SymbolTable<K: Eq + Hash, V> {
     levels: Vec<HashMap<K, V>>
 }
+
+impl<K: Eq + Hash, V> SymbolTable<K, V> {
+    /// Create a new, empty symbol table
+    pub fn new() -> SymbolTable<K, V> {
+        SymbolTable {
+            levels: Vec::new()
+        }
+    }
+}
