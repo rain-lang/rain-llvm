@@ -21,8 +21,9 @@ mod logical;
 mod tuple;
 mod shim;
 
-// NOTE: this module is public to avoid unused code errors
+// NOTE: these modules are public to avoid unused code errors
 pub mod arena;
+pub mod treesym;
 
 /**
 A `rain` code generation context for a given module.
