@@ -11,6 +11,7 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm10-0" }
 fxhash = "^0.2"
 either = "^1.5"
 smallvec = "^1.4"
+im = "^15"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--document-private-items" ]
