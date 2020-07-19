@@ -2,11 +2,12 @@
 Code generation for rain functions
 */
 use super::*;
+use hayami_im::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
-use rain_ir::region::Regional;
+use rain_ir::region::{self, Regional};
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
 
@@ -117,33 +118,66 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Build an inline lambda function with given parameter_values
-    pub fn build_lambda_inline(&mut self, lambda: &Lambda, parameter_values: &[Val<'ctx>]) -> Result<Val<'ctx>, Error> {
-        let this_table = match self.local_arena.get_mut(self.curr_ix) {
-            Some(t) => t,
-            None => panic!("A symbol table should be pushed when building a prototype"),
+    pub fn build_lambda_inline(
+        &mut self,
+        lambda: &Lambda,
+        parameter_values: &[Val<'ctx>],
+    ) -> Result<Val<'ctx>, Error> {
+        // Step 1: get Least Common Region between this lambda's region and the current region
+        let lcr = region::lcr(lambda, &self.curr_region);
+
+        // Step 2: cache the old symbol table, and push a new one
+        let mut base = self.locals.as_ref();
+        let dd = self.curr_region.depth() - lcr.depth();
+        for _ in 0..dd {
+            base = base.expect("Too few layers in symbol table for region").prev();
+        }
+        let new_table = if let Some(base) = base {
+            //TODO: use `Rc`-reference for efficiency here, special casing dd-0
+            base.clone().extend()
+        } else {
+            SymbolTable::default()
         };
+        let old_table = self.locals.replace(new_table);
+
+        // Step 3: register parameters
+        let locals = self.locals.as_mut().unwrap();
         for (i, val) in parameter_values.iter().enumerate() {
             let valid = ValId::from(
-                lambda.get_ty().def_region()
+                lambda
+                    .get_ty()
+                    .def_region()
                     .clone()
                     .param(i)
                     .expect("Iterated index is in bounds"),
             );
-            this_table.insert(valid, val.clone());
+            locals.insert(valid, val.clone());
         }
-        return self.build(lambda.result());
-    }
 
+        // Step 4: compute result
+        let result = self.build(lambda.result());
+
+        // Step 5: restore the old table
+        self.locals = old_table;
+
+        // Step 6: return
+        return result;
+    }
 
     /// Build a `rain` lambda function
     pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
-        if lambda.depth() != 0 {
+        // Step 1: Cache and initialize region
+        let old_region = if lambda.depth() != 0 {
             unimplemented!(
                 "Closures not implemented for lambda {} (depth = {})!",
                 lambda,
                 lambda.depth()
             )
-        }
+        } else {
+            self.region.take()
+        };
+
+        // Step 2: construct type
         let pi = lambda.get_ty();
         let region = pi.def_region();
         let result = pi.result();
@@ -165,6 +199,7 @@ impl<'ctx> Codegen<'ctx> {
         const IRREP_IX: isize = -2;
         let mut has_empty = false;
 
+        // Step 2.a: create parameters
         for input_ty in region.data().iter() {
             match self.repr(input_ty)? {
                 Repr::Type(t) => {
@@ -194,14 +229,16 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Edge case: function has an empty parameter, so no need to make any code
         if has_empty {
+            self.region = old_region; // Reset region!
             return Ok(Val::Unit);
         }
 
-        // Construct a function type
+        // Step 3: construct a function type
         let result_ty = result_repr.fn_type(&input_reprs, false);
 
-        // Construct an empty function of a given type
+        // Step 4: construct an empty function of a given type
         let result_fn = self.module.add_function(
             &format!("__lambda_{}", self.counter),
             result_ty,
@@ -209,10 +246,8 @@ impl<'ctx> Codegen<'ctx> {
         );
         self.counter += 1;
 
-        self.curr_ix = self.local_arena.push(SymbolTable::default());
-        self.local_ixs.insert(result_fn, (self.curr_ix, None));
+        // Step 5: load parameter vector
         let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
-        // Bind parameters
         for ix in input_ixes.iter().copied() {
             match ix {
                 PROP_IX => {
@@ -222,32 +257,30 @@ impl<'ctx> Codegen<'ctx> {
                     parameter_values.push(Val::Irrep);
                 }
                 ix => {
-                    parameter_values.push(
-                        Val::Value(
-                            result_fn
-                                .get_nth_param(ix as u32)
-                                .expect("Index in vector is in bounds")
-                                .into(),
-                        )
-                    );
+                    parameter_values.push(Val::Value(
+                        result_fn
+                            .get_nth_param(ix as u32)
+                            .expect("Index in vector is in bounds")
+                            .into(),
+                    ));
                 }
             }
         }
 
-        // Caching the old one curr and curr_ix
-        let old_curr = self.curr;
-        let old_curr_ix = self.curr_ix;
-
-        // Add an entry basic block, registering it
+        // Step 6: add an entry basic block, registering it, and setting the builder position
         let entry_bb = self.context.append_basic_block(result_fn, "entry");
-        self.local_ixs.insert(
-            result_fn, 
-            (self.curr_ix, Some(entry_bb))
-        );
         self.builder.position_at_end(entry_bb);
-        // Build the result of this lambda
+
+        // Step 7: cache old head, current, and locals, and set new values
+        let old_curr = self.curr;
+        let old_head = self.head;
+        let old_locals = self.locals.take();
+        self.curr = Some(result_fn);
+        self.head = Some(entry_bb);
+        // Step 8: build the body of this lambda by "inlining it into itself"
         let retv = self.build_lambda_inline(lambda, &parameter_values[..]);
-        // If successful, build a return instruction
+
+        // Step 9: if successful, build a return instruction
         let retv_build = match retv {
             Ok(retv) => match retv {
                 Val::Value(v) => {
@@ -265,23 +298,15 @@ impl<'ctx> Codegen<'ctx> {
             },
             Err(err) => Err(err),
         };
-        // Either way, reset the build head if necessary
+        // Step 10: Cleanup: reset current, locals, head, and region
         self.curr = old_curr;
-        self.curr_ix = old_curr_ix;
-        if let Some(curr) = self.curr {
-            if let Some((_, b)) = self.local_ixs.get(&curr) {
-                if let Some(block) = b {
-                    self.builder.position_at_end(*block);
-                }
-            }
-        }
+        self.head = old_head;
+        self.locals = old_locals;
+        self.region = old_region;
+
+        // Step 11: Return, handling errors
         // Bubble up retv errors here;
         retv_build?;
-        // Remove function from table and free the index in arena.
-        if let Some((i, _)) = self.local_ixs.remove(&result_fn) {
-            self.local_arena.free(i);
-        }
-
         // Otherwise, return successfully constructed function
         Ok(Val::Function(result_fn))
     }

@@ -106,12 +106,8 @@ impl<'ctx> Codegen<'ctx> {
                 unimplemented!();
             }
         }
-        if let Some(curr) = self.curr {
-            if let Some((_, b)) = self.local_ixs.get(&curr) {
-                if let Some(block) = b {
-                    self.builder.position_at_end(*block);
-                }
-            }
+        if let Some(head) = self.head {
+            self.builder.position_at_end(head)
         }
         return wrapper_f;
     }

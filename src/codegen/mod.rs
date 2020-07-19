@@ -3,10 +3,8 @@ The data-structures necessary for `rain` code generation
 */
 use super::repr::*;
 use crate::error::Error;
-use arena::Arena;
-use either::Either;
 use fxhash::FxHashMap as HashMap;
-use hayami::{SymbolMap, local::SymbolTable};
+use hayami_im::{SymbolMap, SymbolTable};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -21,9 +19,6 @@ mod logical;
 mod shim;
 mod tuple;
 
-// NOTE: these modules are public to avoid unused code errors
-pub mod arena;
-
 /**
 A `rain` code generation context for a given module.
 
@@ -36,16 +31,16 @@ potential generalizations to a multi-threaded compilation model, with separate L
 pub struct Codegen<'ctx> {
     /// Global rain values
     globals: HashMap<ValId, Val<'ctx>>,
-    /// Indices and basic blocks for LLVM-function specific value symbol tables
-    local_ixs: HashMap<FunctionValue<'ctx>, (usize, Option<BasicBlock<'ctx>>)>,
-    /// Arena for symbol tables
-    local_arena: Arena<'ctx>,
-    /// Current local scope
-    curr_ix: usize,
+    /// Local rain values
+    locals: Option<SymbolTable<ValId, Val<'ctx>>>,
     /// The current region being inlined
     curr_region: Option<Region>,
     /// The current function being compiled, if any
     curr: Option<FunctionValue<'ctx>>,
+    /// The head of the current function being compiled, if any
+    head: Option<BasicBlock<'ctx>>,
+    /// The current region being compiled, if any
+    region: Option<Region>,
     /// Type representations
     reprs: HashMap<TypeId, Repr<'ctx>>,
     /// Function name counter.
@@ -63,11 +58,11 @@ impl<'ctx> Codegen<'ctx> {
     pub fn new(context: &'ctx Context, module: Module<'ctx>) -> Codegen<'ctx> {
         Codegen {
             globals: HashMap::default(),
-            local_ixs: HashMap::default(),
-            local_arena: Arena::new(),
-            curr_ix: 0,
+            locals: None,
             curr_region: None,
             curr: None,
+            head: None,
+            region: None,
             reprs: HashMap::default(),
             counter: 0,
             module,
@@ -125,13 +120,13 @@ impl<'ctx> Codegen<'ctx> {
                 return Ok(val.clone());
             }
         } else {
-            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
+            if let Some(this_table) = self.locals.as_ref() {
                 if let Some(val) = this_table.get(v) {
                     return Ok(val.clone());
                 }
             } else {
                 panic!(
-                    "A symbol table should be already pushed when compiling a value in function"
+                    "A symbol table should be already pushed when compiling a value in a function"
                 );
             }
         }
@@ -152,11 +147,11 @@ impl<'ctx> Codegen<'ctx> {
         if depth == 0 {
             self.globals.insert(v.clone(), val.clone());
         } else {
-            if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
+            if let Some(this_table) = self.locals.as_mut() {
                 this_table.insert(v.clone(), val.clone());
             } else {
                 panic!(
-                    "A symbol table should be already pushed when compiling a value in function"
+                    "A symbol table should be already pushed when compiling a value in a function"
                 );
             }
         }
