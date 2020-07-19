@@ -143,7 +143,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Sexpr(s) => self.build_sexpr(s)?,
             ValueEnum::Tuple(t) => self.build_tuple(t)?,
             ValueEnum::Product(p) => self.build_product(p)?,
-            ValueEnum::Parameter(_) => panic!("Unregistered parameter {}!", v),
+            ValueEnum::Parameter(_) => panic!("Unregistered parameter {}, depth = {}!", v, depth),
             ValueEnum::Finite(f) => self.build_finite(f),
             ValueEnum::Index(i) => self.build_index(i),
             _ => unimplemented!("Building value {}", v),
