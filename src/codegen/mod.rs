@@ -3,27 +3,26 @@ The data-structures necessary for `rain` code generation
 */
 use super::repr::*;
 use crate::error::Error;
+use arena::Arena;
 use either::Either;
 use fxhash::FxHashMap as HashMap;
-use hayami::SymbolTable;
+use hayami::{SymbolMap, local::SymbolTable};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::values::FunctionValue;
-use rain_ir::region::Regional;
+use rain_ir::region::{Region, Regional};
 use rain_ir::value::{TypeId, ValId, ValueEnum};
-use arena::Arena;
 
 mod finite;
 mod function;
 mod logical;
-mod tuple;
 mod shim;
+mod tuple;
 
 // NOTE: these modules are public to avoid unused code errors
 pub mod arena;
-pub mod treesym;
 
 /**
 A `rain` code generation context for a given module.
@@ -43,6 +42,8 @@ pub struct Codegen<'ctx> {
     local_arena: Arena<'ctx>,
     /// Current local scope
     curr_ix: usize,
+    /// The current region being inlined
+    curr_region: Option<Region>,
     /// The current function being compiled, if any
     curr: Option<FunctionValue<'ctx>>,
     /// Type representations
@@ -65,6 +66,7 @@ impl<'ctx> Codegen<'ctx> {
             local_ixs: HashMap::default(),
             local_arena: Arena::new(),
             curr_ix: 0,
+            curr_region: None,
             curr: None,
             reprs: HashMap::default(),
             counter: 0,
@@ -73,7 +75,7 @@ impl<'ctx> Codegen<'ctx> {
             context,
         }
     }
-    
+
     /// Get the global compiled `rain` values
     ///
     /// See the documentation for the `globals` private member of `Codegen` for more information.
@@ -128,7 +130,9 @@ impl<'ctx> Codegen<'ctx> {
                     return Ok(val.clone());
                 }
             } else {
-                panic!("A symbol table should be already pushed when compiling a value in function");
+                panic!(
+                    "A symbol table should be already pushed when compiling a value in function"
+                );
             }
         }
 
@@ -151,7 +155,9 @@ impl<'ctx> Codegen<'ctx> {
             if let Some(this_table) = self.local_arena.get_mut(self.curr_ix) {
                 this_table.insert(v.clone(), val.clone());
             } else {
-                panic!("A symbol table should be already pushed when compiling a value in function");
+                panic!(
+                    "A symbol table should be already pushed when compiling a value in function"
+                );
             }
         }
         Ok(val)

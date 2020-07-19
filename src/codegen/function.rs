@@ -165,7 +165,7 @@ impl<'ctx> Codegen<'ctx> {
         const IRREP_IX: isize = -2;
         let mut has_empty = false;
 
-        for input_ty in region.iter() {
+        for input_ty in region.data().iter() {
             match self.repr(input_ty)? {
                 Repr::Type(t) => {
                     if !has_empty {
