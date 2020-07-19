@@ -109,6 +109,6 @@ impl<'ctx> Codegen<'ctx> {
         if let Some(head) = self.head {
             self.builder.position_at_end(head)
         }
-        return wrapper_f;
+        wrapper_f
     }
 }

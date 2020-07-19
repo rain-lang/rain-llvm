@@ -51,13 +51,13 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Build a function application
     pub fn build_app(&mut self, f: &ValId, args: &[ValId]) -> Result<Val<'ctx>, Error> {
-        if args.len() == 0 {
+        if args.is_empty() {
             return self.build(f);
         }
-        match f.as_enum() {
-            // Special case logical operation building
-            ValueEnum::Logical(l) => return self.build_logical_expr(*l, args),
-            _ => {}
+
+        //TODO: more generic inline?
+        if let ValueEnum::Logical(l) = f.as_enum() {
+            return self.build_logical_expr(*l, args)
         }
 
         let ty = f.ty();
@@ -94,7 +94,7 @@ impl<'ctx> Codegen<'ctx> {
                             .builder
                             .build_extract_value(struct_value, repr_ix, "idx")
                             .expect("Internal error: valid index guaranteed by IR construction");
-                        Ok(Val::Value(element.into()))
+                        Ok(Val::Value(element))
                     }
                 }
             }
@@ -161,7 +161,7 @@ impl<'ctx> Codegen<'ctx> {
         self.locals = old_table;
 
         // Step 6: return
-        return result;
+        result
     }
 
     /// Build a `rain` lambda function
@@ -260,8 +260,7 @@ impl<'ctx> Codegen<'ctx> {
                     parameter_values.push(Val::Value(
                         result_fn
                             .get_nth_param(ix as u32)
-                            .expect("Index in vector is in bounds")
-                            .into(),
+                            .expect("Index in vector is in bounds"),
                     ));
                 }
             }

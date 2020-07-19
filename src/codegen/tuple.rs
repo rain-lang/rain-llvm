@@ -33,13 +33,15 @@ impl<'ctx> Codegen<'ctx> {
                 Repr::Empty => return Ok(Repr::Empty),
                 Repr::Irrep => {
                     let mut return_empty = false;
-                    while let Some(r) = reprs.next() {
+                    for r in reprs {
                         if r? == Repr::Empty {
                             return_empty = true;
                         }
                     }
                     if return_empty {
                         return Ok(Repr::Empty);
+                    } else {
+                        break;
                     }
                 }
                 Repr::Prop => mapping.push(None),

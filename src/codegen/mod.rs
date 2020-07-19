@@ -89,9 +89,8 @@ impl<'ctx> Codegen<'ctx> {
     /// Get the representation for a given type, if any
     pub fn repr(&mut self, t: &TypeId) -> Result<Repr<'ctx>, Error> {
         // Special cases
-        match t.as_enum() {
-            ValueEnum::BoolTy(_) => return Ok(Repr::Type(self.context.bool_type().into())),
-            _ => {}
+        if let ValueEnum::BoolTy(_) = t.as_enum() {
+            return Ok(Repr::Type(self.context.bool_type().into()))
         }
         // Cached case
         if let Some(repr) = self.reprs.get(t) {
@@ -115,20 +114,17 @@ impl<'ctx> Codegen<'ctx> {
     /// Build a given value
     pub fn build(&mut self, v: &ValId) -> Result<Val<'ctx>, Error> {
         let depth = v.depth();
+
         if depth == 0 {
             if let Some(val) = self.globals().get(v) {
                 return Ok(val.clone());
             }
-        } else {
-            if let Some(this_table) = self.locals.as_ref() {
-                if let Some(val) = this_table.get(v) {
-                    return Ok(val.clone());
-                }
-            } else {
-                panic!(
-                    "A symbol table should be already pushed when compiling a value in a function"
-                );
+        } else if let Some(this_table) = self.locals.as_ref() {
+            if let Some(val) = this_table.get(v) {
+                return Ok(val.clone());
             }
+        } else {
+            panic!("A symbol table should be already pushed when compiling a value in a function");
         }
 
         let val = match v.as_enum() {
@@ -146,14 +142,10 @@ impl<'ctx> Codegen<'ctx> {
 
         if depth == 0 {
             self.globals.insert(v.clone(), val.clone());
+        } else if let Some(this_table) = self.locals.as_mut() {
+            this_table.insert(v.clone(), val.clone());
         } else {
-            if let Some(this_table) = self.locals.as_mut() {
-                this_table.insert(v.clone(), val.clone());
-            } else {
-                panic!(
-                    "A symbol table should be already pushed when compiling a value in a function"
-                );
-            }
+            panic!("A symbol table should be already pushed when compiling a value in a function");
         }
         Ok(val)
     }
