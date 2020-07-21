@@ -13,5 +13,8 @@ either = "^1.5"
 smallvec = "^1.4"
 im-rc = "^15"
 
+[dev-dependencies]
+rain-builder = { git = "https://gitlab.com/rain-lang/rain-builder.git"}
+
 [package.metadata.docs.rs]
 rustdoc-args = [ "--document-private-items" ]
