@@ -291,3 +291,13 @@ test:git-master:
     needs:
         - prepare:git
         - build:cargo-stable
+
+pages:
+    script:
+        - cargo doc --no-deps
+        - mv target/doc public
+    artifacts:
+        paths:
+            - public
+    rules:
+        - if: '$CI_COMMIT_BRANCH == "master"'
