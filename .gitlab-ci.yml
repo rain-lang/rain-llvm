@@ -303,5 +303,4 @@ test:pages:
     artifacts:
         paths:
             - public
-    rules:
-        - if: '$CI_COMMIT_BRANCH == "master"'
+    only: master@rain-lang/rain-llvm
