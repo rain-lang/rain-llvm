@@ -296,7 +296,9 @@ test:pages:
     script:
         - cargo doc --no-deps
         - mv target/doc public
-    artifacts:
+    dependencies:
+        - build:cargo-stable
+        artifacts:
         paths:
             - public
     rules:
