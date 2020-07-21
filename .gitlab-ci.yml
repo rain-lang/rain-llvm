@@ -178,6 +178,7 @@ stages:
     - prepare
     - build
     - test
+    - doc
 
 prepare:cargo-cache-newest:
     <<:
@@ -292,13 +293,14 @@ test:git-master:
         - prepare:git
         - build:cargo-stable
 
-test:pages:
+pages:
     <<:
         - *rust_stable
+    stage: doc
     script:
         - cargo doc --no-deps
         - mv target/doc public
-        - - echo '<meta http-equiv="refresh" content="0; url={{ LIBRARY NAME }}">' > public/index.html
+        - - echo '<meta http-equiv="refresh" content="0; url=rain_llvm/index.html">' > public/index.html
     dependencies:
         - build:cargo-stable
     artifacts:
