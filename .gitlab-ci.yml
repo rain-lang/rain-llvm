@@ -293,6 +293,8 @@ test:git-master:
         - build:cargo-stable
 
 test:pages:
+    <<:
+        - *rust_stable
     script:
         - cargo doc --no-deps
         - mv target/doc public
