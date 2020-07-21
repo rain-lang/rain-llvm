@@ -298,6 +298,7 @@ test:pages:
     script:
         - cargo doc --no-deps
         - mv target/doc public
+        - - echo '<meta http-equiv="refresh" content="0; url={{ LIBRARY NAME }}">' > public/index.html
     dependencies:
         - build:cargo-stable
     artifacts:
@@ -305,3 +306,8 @@ test:pages:
             - public
     only: 
         - master@rain-lang/rain-llvm
+
+cache:
+    paths:
+        - cargo/
+        - target/
