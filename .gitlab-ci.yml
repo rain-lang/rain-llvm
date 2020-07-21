@@ -292,7 +292,7 @@ test:git-master:
         - prepare:git
         - build:cargo-stable
 
-pages:
+test:pages:
     script:
         - cargo doc --no-deps
         - mv target/doc public
