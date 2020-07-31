@@ -6,7 +6,8 @@ use hayami_im::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
-use rain_ir::function::{lambda::Lambda, pi::Pi, gamma::{Gamma, pattern::PatternData}};
+use rain_ir::function::{lambda::Lambda, pi::Pi};
+use rain_ir::control::ternary::{Ternary};
 use rain_ir::region::{self, Regional};
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
@@ -19,21 +20,27 @@ pub const DEFAULT_GAMMA_LINKAGE: Option<Linkage> = None;
 impl<'ctx> Codegen<'ctx> {
 
     /// Build a gamma node
-    pub fn build_gamma(&mut self, gamma: &Gamma) -> Result<Val<'ctx>, Error> {
+    pub fn build_ternary(&mut self, ternary: &Ternary) -> Result<Val<'ctx>, Error> {
         // TODO: Factor this out into a helper function later
+        if ternary.low().ty() != ternary.high().ty() {
+            unimplemented!(
+                "Ternary branch return different type is not implemented"
+            );
+        }
+        
         // Step 1: Cache and initialize region
-        let old_region = if gamma.depth() != 0 {
+        let old_region = if ternary.depth() != 0 {
             unimplemented!(
                 "Closures not implemented for lambda {} (depth = {})!",
-                gamma,
-                gamma.depth()
+                ternary,
+                ternary.depth()
             )
         } else {
             self.region.take()
         };
 
         // Step 2: construct type
-        let pi = gamma.get_ty();
+        let pi = ternary.get_ty();
         let region = pi.def_region();
         let result = pi.result();
         if result.depth() != 0 {
@@ -132,57 +139,63 @@ impl<'ctx> Codegen<'ctx> {
         self.curr = Some(result_fn);
         self.head = Some(entry_bb);
         
-        if gamma.branches().len() == 1 {
-            // Step 8: build the body of this lambda by "inlining it into itself"
-            let retv = self.build_lambda_inline(gamma.branches()[0].func(), &parameter_values[..]);
+        let true_branch = self.context.append_basic_block(
+            result_fn, 
+            "true_branch"
+        );
+        let false_branch = self.context.append_basic_block(
+            result_fn, 
+            "false_branch"
+        );
 
-            // Step 9: if successful, build a return instruction
-            let retv_build = match retv {
-                Ok(retv) => match retv {
-                    Val::Value(v) => {
-                        self.builder.build_return(Some(&v));
-                        Ok(())
-                    }
-                    Val::Function(f) => unimplemented!(
-                        "Higher order functions not yet implemented, returned {:?}",
-                        f
-                    ),
-                    v @ Val::Unit | v @ Val::Irrep | v @ Val::Contr => panic!(
-                        "Impossible representation {:?} for compiled function result",
-                        v
-                    ),
-                },
-                Err(err) => Err(err),
-            };
-            // Step 10: Cleanup: reset current, locals, head, and region
-            self.curr = old_curr;
-            self.head = old_head;
-            self.locals = old_locals;
-            self.region = old_region;
+        self.builder.position_at_end(entry_bb);
+        self.builder.build_conditional_branch(
+            result_fn.get_nth_param(0).unwrap().into_int_value(),
+            true_branch,
+            false_branch
+        );
 
-            // Step 11: Return, handling errors
-            // Bubble up retv errors here;
-            retv_build?;
-            // Otherwise, return successfully constructed function
-            Ok(Val::Function(result_fn))
-        } else if gamma.branches().len() == 2 {
-            let branch_0 = &gamma.branches()[0];
-            let this_bool_pattern = match branch_0.pattern().deref() {
-                PatternData::Empty(_) => unimplemented!("Fix this later"),
-                PatternData::Any(_) => unimplemented!("Fix this later"),
-                PatternData::Bool(b) => b
-            };
-            let this_block = self.context.append_basic_block(result_fn, "branch_0");
-            self.builder.position_at_end(this_block);
-            let result_0 = self.build_lambda_inline(branch_0.func(), &[])?;
-            
-            let branch_1 = &gamma.branches()[0];
-            
+        let end_branch = self.context.append_basic_block(
+            result_fn,
+            "end"
+        );
 
-            unimplemented!();
-        } else {
-            Err(Error::InternalError("Boolean gamma node should not have more than two branches"))
-        }
+        self.builder.position_at_end(true_branch);
+        let true_branch_val = match self.build(&ternary.high())? {
+            Val::Value(v) => v,
+            _ => unimplemented!("Other return type unimplemented")
+        };
+        self.builder.build_unconditional_branch(end_branch);
+
+        self.builder.position_at_end(false_branch);
+        let false_branch_val = match self.build(&ternary.low())? {
+            Val::Value(v) => v,
+            _ => unimplemented!("Other return type unimplemented")
+        };
+        self.builder.build_unconditional_branch(end_branch);
+        
+        self.builder.position_at_end(end_branch);
+        let phi_val = self.builder.build_phi(
+            result_repr,
+            &format!("__phi_{}", self.counter)
+        );
+        phi_val.add_incoming(
+            &[
+                (&true_branch_val, true_branch),
+                (&false_branch_val, false_branch)
+            ]
+        );
+
+        self.builder.build_return(Some(&phi_val.as_basic_value()));
+
+        // Step 10: Cleanup: reset current, locals, head, and region
+        self.curr = old_curr;
+        self.head = old_head;
+        self.locals = old_locals;
+        self.region = old_region;
+
+        // Otherwise, return successfully constructed function
+        Ok(Val::Function(result_fn))
     }
 
 }

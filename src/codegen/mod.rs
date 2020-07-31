@@ -138,7 +138,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Parameter(_) => panic!("Unregistered parameter {}, depth = {}!", v, depth),
             ValueEnum::Finite(f) => self.build_finite(f),
             ValueEnum::Index(i) => self.build_index(i),
-            ValueEnum::Gamma(g) => self.build_gamma(g)?,
+            ValueEnum::Ternary(t) => self.build_ternary(t)?,
             _ => unimplemented!("Building value {}", v),
         };
 
