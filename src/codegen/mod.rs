@@ -18,7 +18,7 @@ mod function;
 mod logical;
 mod shim;
 mod tuple;
-mod gamma;
+mod ternary;
 
 /**
 A `rain` code generation context for a given module.
