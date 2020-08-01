@@ -2,36 +2,26 @@
 Code generation for rain gammas
 */
 use super::*;
-use hayami_im::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue};
-use rain_ir::function::{lambda::Lambda, pi::Pi};
-use rain_ir::control::ternary::{Ternary};
-use rain_ir::region::{self, Regional};
+use rain_ir::control::ternary::Ternary;
+use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
-use rain_ir::value::expr::Sexpr;
-use std::ops::Deref;
 
 /// The default linkage of lambda values
 pub const DEFAULT_GAMMA_LINKAGE: Option<Linkage> = None;
 
-
 impl<'ctx> Codegen<'ctx> {
-
     /// Build a gamma node
     pub fn build_ternary(&mut self, ternary: &Ternary) -> Result<Val<'ctx>, Error> {
         // TODO: Factor this out into a helper function later
         if ternary.low().ty() != ternary.high().ty() {
-            unimplemented!(
-                "Ternary branch return different type is not implemented"
-            );
+            unimplemented!("Dependent ternary nodes are not implemented");
         }
-        
         // Step 1: Cache and initialize region
         let old_region = if ternary.depth() != 0 {
             unimplemented!(
-                "Closures not implemented for lambda {} (depth = {})!",
+                "Closures not implemented for ternary nodes {} (depth = {})!",
                 ternary,
                 ternary.depth()
             )
@@ -45,7 +35,7 @@ impl<'ctx> Codegen<'ctx> {
         let result = pi.result();
         if result.depth() != 0 {
             return Err(Error::NotImplemented(
-                "Non-constant return types for pi functions",
+                "Non-constant return types for ternary nodes",
             ));
         }
         let result_repr = match self.repr(result)? {
@@ -138,53 +128,39 @@ impl<'ctx> Codegen<'ctx> {
         let old_locals = self.locals.take();
         self.curr = Some(result_fn);
         self.head = Some(entry_bb);
-        
-        let true_branch = self.context.append_basic_block(
-            result_fn, 
-            "true_branch"
-        );
-        let false_branch = self.context.append_basic_block(
-            result_fn, 
-            "false_branch"
-        );
 
+        let true_branch = self.context.append_basic_block(result_fn, "true_branch");
+        let false_branch = self.context.append_basic_block(result_fn, "false_branch");
         self.builder.position_at_end(entry_bb);
         self.builder.build_conditional_branch(
             result_fn.get_nth_param(0).unwrap().into_int_value(),
             true_branch,
-            false_branch
+            false_branch,
         );
 
-        let end_branch = self.context.append_basic_block(
-            result_fn,
-            "end"
-        );
+        let end_branch = self.context.append_basic_block(result_fn, "end");
 
         self.builder.position_at_end(true_branch);
         let true_branch_val = match self.build(&ternary.high())? {
             Val::Value(v) => v,
-            _ => unimplemented!("Other return type unimplemented")
+            _ => unimplemented!("Other return type unimplemented"),
         };
         self.builder.build_unconditional_branch(end_branch);
 
         self.builder.position_at_end(false_branch);
         let false_branch_val = match self.build(&ternary.low())? {
             Val::Value(v) => v,
-            _ => unimplemented!("Other return type unimplemented")
+            _ => unimplemented!("Other return type unimplemented"),
         };
         self.builder.build_unconditional_branch(end_branch);
-        
         self.builder.position_at_end(end_branch);
-        let phi_val = self.builder.build_phi(
-            result_repr,
-            &format!("__phi_{}", self.counter)
-        );
-        phi_val.add_incoming(
-            &[
-                (&true_branch_val, true_branch),
-                (&false_branch_val, false_branch)
-            ]
-        );
+        let phi_val = self
+            .builder
+            .build_phi(result_repr, "cond");
+        phi_val.add_incoming(&[
+            (&true_branch_val, true_branch),
+            (&false_branch_val, false_branch),
+        ]);
 
         self.builder.build_return(Some(&phi_val.as_basic_value()));
 
@@ -197,5 +173,4 @@ impl<'ctx> Codegen<'ctx> {
         // Otherwise, return successfully constructed function
         Ok(Val::Function(result_fn))
     }
-
 }
