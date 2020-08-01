@@ -118,13 +118,11 @@ impl<'ctx> Codegen<'ctx> {
             Repr::Type(t) => t,
             Repr::Function(_f) => unimplemented!(),
             Repr::Empty | Repr::Prop => return Ok(Val::Unit),
-            Repr::Irrep => return Ok(Val::Irrep),
             Repr::Product(p) => p.repr.into(),
         };
         let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
         let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
         const PROP_IX: isize = -1;
-        const IRREP_IX: isize = -2;
         let mut has_empty = false;
 
         // Step 2.a: create parameters
@@ -143,11 +141,6 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
                 Repr::Empty => has_empty = true,
-                Repr::Irrep => {
-                    if !has_empty {
-                        input_ixes.push(IRREP_IX);
-                    }
-                }
                 Repr::Product(p) => {
                     if !has_empty {
                         input_ixes.push(input_reprs.len() as isize);
@@ -180,9 +173,6 @@ impl<'ctx> Codegen<'ctx> {
             match ix {
                 PROP_IX => {
                     parameter_values.push(Val::Unit);
-                }
-                IRREP_IX => {
-                    parameter_values.push(Val::Irrep);
                 }
                 ix => {
                     parameter_values.push(Val::Value(

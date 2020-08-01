@@ -2,6 +2,7 @@
 Code generation for rain functions
 */
 use super::*;
+use either::Either;
 use hayami_im::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -10,6 +11,7 @@ use rain_ir::function::{lambda::Lambda, pi::Pi};
 use rain_ir::region::{self, Regional};
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
+use std::rc::Rc;
 
 /// The default linkage of lambda values
 pub const DEFAULT_LAMBDA_LINKAGE: Option<Linkage> = None;
@@ -30,7 +32,6 @@ impl<'ctx> Codegen<'ctx> {
         for arg in args {
             match self.build(arg)? {
                 Val::Contr => return Ok(Val::Contr),
-                Val::Irrep => return Err(Error::Irrepresentable), //TODO: return Ok(Val::Irrep)?
                 Val::Unit => {
                     return Ok(Val::Unit);
                 }
@@ -57,7 +58,7 @@ impl<'ctx> Codegen<'ctx> {
 
         //TODO: more generic inline?
         if let ValueEnum::Logical(l) = f.as_enum() {
-            return self.build_logical_expr(*l, args)
+            return self.build_logical_expr(*l, args);
         }
 
         let ty = f.ty();
@@ -67,7 +68,6 @@ impl<'ctx> Codegen<'ctx> {
                 match self.repr(&ty.clone_ty())? {
                     Repr::Prop => Ok(Val::Unit),
                     Repr::Empty => Ok(Val::Contr),
-                    Repr::Irrep => Ok(Val::Irrep),
                     Repr::Type(_t) => unimplemented!(),
                     Repr::Function(_f) => unimplemented!(),
                     Repr::Product(p) => {
@@ -87,7 +87,6 @@ impl<'ctx> Codegen<'ctx> {
                         let struct_value = match self.build(f)? {
                             Val::Value(BasicValueEnum::StructValue(s)) => s,
                             Val::Contr => return Ok(Val::Contr),
-                            Val::Irrep => return Ok(Val::Irrep), //TODO: think about this...
                             _ => panic!("Internal error: Repr::Product guarantees BasicValueEnum::StructValue")
                         };
                         let element = self
@@ -100,7 +99,6 @@ impl<'ctx> Codegen<'ctx> {
             }
             ValueEnum::Lambda(l) => match self.build_lambda(l)? {
                 Val::Contr => Ok(Val::Contr),
-                Val::Irrep => Ok(Val::Irrep), //TODO: think about this...
                 Val::Unit => unimplemented!("Unit lambda representation"), //TODO: think about this...
                 Val::Value(v) => unimplemented!("Value lambda representation {:?}", v),
                 Val::Function(f) => self.build_function_call(f, args),
@@ -130,7 +128,9 @@ impl<'ctx> Codegen<'ctx> {
         let mut base = self.locals.as_ref();
         let dd = self.curr_region.depth() - lcr.depth();
         for _ in 0..dd {
-            base = base.expect("Too few layers in symbol table for region").prev();
+            base = base
+                .expect("Too few layers in symbol table for region")
+                .prev();
         }
         let new_table = if let Some(base) = base {
             //TODO: use `Rc`-reference for efficiency here, special casing dd-0
@@ -164,6 +164,66 @@ impl<'ctx> Codegen<'ctx> {
         result
     }
 
+    /// Build a function representation
+    pub fn build_function_repr(&mut self, pi: &Pi) -> Result<Repr<'ctx>, Error> {
+        // Step 1: Compute result representation
+        let region = pi.def_region();
+        let result = pi.result();
+        if result.depth() != 0 {
+            return Err(Error::NotImplemented(
+                "Non-constant return types for pi functions",
+            ));
+        }
+        let result_repr = match self.repr(result)? {
+            Repr::Type(t) => t,
+            Repr::Function(_f) => unimplemented!(),
+            Repr::Prop | Repr::Empty => return Ok(Repr::Prop),
+            Repr::Product(p) => p.repr.into(),
+        };
+
+        // Step 2: Compute parameter types
+        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
+        let mut input_ixes: InputIxes = InputIxes::with_capacity(region.len() as u32);
+        let mut has_empty = false;
+
+        for input_ty in region.data().iter() {
+            match self.repr(input_ty)? {
+                Repr::Type(t) => {
+                    if !has_empty {
+                        input_ixes.push_ix(input_reprs.len() as u32);
+                        input_reprs.push(t);
+                    }
+                }
+                Repr::Function(_) => unimplemented!(),
+                Repr::Prop => {
+                    if !has_empty {
+                        input_ixes.push_prop();
+                    }
+                }
+                Repr::Empty => has_empty = true,
+                Repr::Product(p) => {
+                    if !has_empty {
+                        input_ixes.push_ix(input_reprs.len() as u32);
+                        input_reprs.push(p.repr.into());
+                    }
+                }
+            }
+        }
+
+        // Edge case: function has an empty parameter, so no need to make any code
+        if has_empty {
+            return Ok(Repr::Prop);
+        }
+
+        // Step 3: create LLVM function type
+        let repr = result_repr.fn_type(&input_reprs, false);
+
+        Ok(Repr::Function(Rc::new(FunctionRepr {
+            repr,
+            mapping: input_ixes,
+        })))
+    }
+
     /// Build a `rain` lambda function
     pub fn build_lambda(&mut self, lambda: &Lambda) -> Result<Val<'ctx>, Error> {
         // Step 1: Cache and initialize region
@@ -177,86 +237,41 @@ impl<'ctx> Codegen<'ctx> {
             self.region.take()
         };
 
-        // Step 2: construct type
-        let pi = lambda.get_ty();
-        let region = pi.def_region();
-        let result = pi.result();
-        if result.depth() != 0 {
-            return Err(Error::NotImplemented(
-                "Non-constant return types for pi functions",
-            ));
-        }
-        let result_repr = match self.repr(result)? {
-            Repr::Type(t) => t,
-            Repr::Function(_f) => unimplemented!(),
-            Repr::Empty | Repr::Prop => return Ok(Val::Unit),
-            Repr::Irrep => return Ok(Val::Irrep),
-            Repr::Product(p) => p.repr.into(),
+        // Step 2: construct prototype, construct function, handle edge cases
+        //TODO: general get_repr
+        let prototype_or_return = match self.build_function_repr(lambda.get_ty()) {
+            Ok(Repr::Function(prototype)) => Either::Left(prototype),
+            Ok(Repr::Prop) => Either::Right(Ok(Val::Unit)),
+            Ok(r) => panic!("Invalid function representation: {:?}", r),
+            Err(err) => Either::Right(Err(err)),
         };
-        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
-        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
-        const PROP_IX: isize = -1;
-        const IRREP_IX: isize = -2;
-        let mut has_empty = false;
 
-        // Step 2.a: create parameters
-        for input_ty in region.data().iter() {
-            match self.repr(input_ty)? {
-                Repr::Type(t) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(t);
-                    }
-                }
-                Repr::Function(_) => unimplemented!(),
-                Repr::Prop => {
-                    if !has_empty {
-                        input_ixes.push(PROP_IX);
-                    }
-                }
-                Repr::Empty => has_empty = true,
-                Repr::Irrep => {
-                    if !has_empty {
-                        input_ixes.push(IRREP_IX);
-                    }
-                }
-                Repr::Product(p) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(p.repr.into());
-                    }
-                }
+        let prototype = match prototype_or_return {
+            Either::Left(prototype) => prototype,
+            Either::Right(retv) => {
+                // Reset region
+                self.region = old_region;
+                // Propagate early return, avoiding codegen
+                return retv;
             }
-        }
+        };
 
-        // Edge case: function has an empty parameter, so no need to make any code
-        if has_empty {
-            self.region = old_region; // Reset region!
-            return Ok(Val::Unit);
-        }
-
-        // Step 3: construct a function type
-        let result_ty = result_repr.fn_type(&input_reprs, false);
-
-        // Step 4: construct an empty function of a given type
         let result_fn = self.module.add_function(
             &format!("__lambda_{}", self.counter),
-            result_ty,
+            prototype.repr,
             DEFAULT_LAMBDA_LINKAGE,
         );
         self.counter += 1;
 
-        // Step 5: load parameter vector
+        // Step 3: set region, load parameter vector
+        let region = lambda.def_region();
         let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
-        for ix in input_ixes.iter().copied() {
+        for ix in prototype.mapping.iter() {
             match ix {
-                PROP_IX => {
+                InputIx::Prop => {
                     parameter_values.push(Val::Unit);
                 }
-                IRREP_IX => {
-                    parameter_values.push(Val::Irrep);
-                }
-                ix => {
+                InputIx::Val(ix) => {
                     parameter_values.push(Val::Value(
                         result_fn
                             .get_nth_param(ix as u32)
@@ -266,20 +281,21 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        // Step 6: add an entry basic block, registering it, and setting the builder position
+        // Step 4: add an entry basic block, registering it, and setting the builder position
         let entry_bb = self.context.append_basic_block(result_fn, "entry");
         self.builder.position_at_end(entry_bb);
 
-        // Step 7: cache old head, current, and locals, and set new values
+        // Step 5: cache old head, current, and locals, and set new values
         let old_curr = self.curr;
         let old_head = self.head;
         let old_locals = self.locals.take();
         self.curr = Some(result_fn);
         self.head = Some(entry_bb);
-        // Step 8: build the body of this lambda by "inlining it into itself"
+
+        // Step 6: build the body of this lambda by "inlining it into itself"
         let retv = self.build_lambda_inline(lambda, &parameter_values[..]);
 
-        // Step 9: if successful, build a return instruction
+        // Step 7: if successful, build a return instruction
         let retv_build = match retv {
             Ok(retv) => match retv {
                 Val::Value(v) => {
@@ -290,20 +306,20 @@ impl<'ctx> Codegen<'ctx> {
                     "Higher order functions not yet implemented, returned {:?}",
                     f
                 ),
-                v @ Val::Unit | v @ Val::Irrep | v @ Val::Contr => panic!(
+                v @ Val::Unit | v @ Val::Contr => panic!(
                     "Impossible representation {:?} for compiled function result",
                     v
                 ),
             },
             Err(err) => Err(err),
         };
-        // Step 10: Cleanup: reset current, locals, head, and region
+        // Step 8: Cleanup: reset current, locals, head, and region
         self.curr = old_curr;
         self.head = old_head;
         self.locals = old_locals;
         self.region = old_region;
 
-        // Step 11: Return, handling errors
+        // Step 9: Return, handling errors
         // Bubble up retv errors here;
         retv_build?;
         // Otherwise, return successfully constructed function

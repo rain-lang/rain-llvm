@@ -5,7 +5,6 @@ Code generation for `rain` tuples and product types
 use super::*;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicValueEnum;
-use inkwell::AddressSpace;
 use rain_ir::typing::Typed;
 use rain_ir::value::tuple::{Product, Tuple};
 use std::rc::Rc;
@@ -16,8 +15,8 @@ impl<'ctx> Codegen<'ctx> {
         let mut mapping: Vec<Option<u32>> = Vec::new();
         let mut struct_index = 0;
         let mut repr_vec: Vec<BasicTypeEnum<'ctx>> = Vec::new();
-        let mut reprs = p.iter().map(|ty| self.repr(ty));
-        while let Some(repr) = reprs.next() {
+        let reprs = p.iter().map(|ty| self.repr(ty));
+        for repr in reprs {
             let repr = repr?;
             match repr {
                 Repr::Type(ty) => {
@@ -25,25 +24,8 @@ impl<'ctx> Codegen<'ctx> {
                     mapping.push(Some(struct_index));
                     struct_index += 1;
                 }
-                Repr::Function(f) => {
-                    repr_vec.push(f.ptr_type(AddressSpace::Global).into());
-                    mapping.push(Some(struct_index));
-                    struct_index += 1;
-                }
+                Repr::Function(_) => unimplemented!("Functions in structure types!"),
                 Repr::Empty => return Ok(Repr::Empty),
-                Repr::Irrep => {
-                    let mut return_empty = false;
-                    for r in reprs {
-                        if r? == Repr::Empty {
-                            return_empty = true;
-                        }
-                    }
-                    if return_empty {
-                        return Ok(Repr::Empty);
-                    } else {
-                        break;
-                    }
-                }
                 Repr::Prop => mapping.push(None),
                 Repr::Product(p) => {
                     repr_vec.push(p.repr.into());
@@ -74,8 +56,6 @@ impl<'ctx> Codegen<'ctx> {
                     Repr::Product(tmp) => tmp,
                     Repr::Prop => return Ok(Val::Unit),
                     Repr::Empty => return Ok(Val::Contr),
-                    // TODO: think about Local::Irrep
-                    Repr::Irrep => return Err(Error::Irrepresentable),
                     // TODO: Rethink the following later
                     Repr::Function(_f) => {
                         return Err(Error::NotImplemented("Function in tuple not implemented"));

@@ -6,6 +6,7 @@ use inkwell::types::{BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
 use std::convert::TryFrom;
 use std::rc::Rc;
+use std::ops::Deref;
 
 /**
 A representation of product
@@ -21,6 +22,17 @@ pub struct ProductRepr<'ctx> {
 }
 
 /**
+A LLVM function implementing a main function
+*/
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionRepr<'ctx> {
+    /// A mapping since we need to skip `Repr::Unit`
+    pub mapping: InputIxes,
+    /// The function type representation
+    pub repr: FunctionType<'ctx>
+}
+
+/**
 An LLVM representation for a `rain` type
 */
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,15 +40,13 @@ pub enum Repr<'ctx> {
     /// As a basic LLVM type
     Type(BasicTypeEnum<'ctx>),
     /// As a function
-    Function(FunctionType<'ctx>),
+    Function(Rc<FunctionRepr<'ctx>>),
     /// As a compound
     Product(Rc<ProductRepr<'ctx>>),
     /// As a mere proposition
     Prop,
     /// As the empty type
     Empty,
-    /// An irrepresentable type
-    Irrep,
 }
 
 /**
@@ -52,8 +62,6 @@ pub enum Val<'ctx> {
     Unit,
     /// A contradiction, indicating undefined behaviour
     Contr,
-    /// An irrepresentable value but valid value, propagating to a runtime error if not in an unreachable branch
-    Irrep,
 }
 
 impl<'ctx> From<BasicValueEnum<'ctx>> for Val<'ctx> {
@@ -107,5 +115,74 @@ impl<'ctx> TryFrom<Val<'ctx>> for FunctionValue<'ctx> {
             Val::Function(f) => Ok(f),
             v => Err(v),
         }
+    }
+}
+
+/// An input index
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum InputIx {
+    /// A value index
+    Val(u32),
+    /// A propositional index
+    Prop,
+}
+
+impl InputIx {
+    /// The index corresponding to a propositional type
+    pub const PROP_IX: i32 = -1;
+}
+
+impl From<i32> for InputIx {
+    fn from(ix: i32) -> InputIx {
+        match ix {
+            InputIx::PROP_IX => InputIx::Prop,
+            ix => InputIx::Val(ix as u32)
+        }
+    }
+}
+
+/// A set of input indices
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct InputIxes(Vec<i32>);
+
+impl InputIxes {
+    /// Create a new set of input indices
+    pub fn new() -> InputIxes {
+        Self::with_capacity(0)
+    }
+    /// Create a new set of input indices with the given capacity
+    pub fn with_capacity(n: u32) -> InputIxes {
+        InputIxes(Vec::with_capacity(n as usize))
+    }
+    /// Push a new value index
+    pub fn push_ix(&mut self, ix: u32) {
+        self.0.push(ix as i32)
+    }
+    /// Push a new propositional index
+    pub fn push_prop(&mut self) {
+        self.0.push(InputIx::PROP_IX)
+    }
+    /// Push a new input index
+    pub fn push(&mut self, ix: InputIx) {
+        match ix {
+            InputIx::Val(val) => self.push_ix(val),
+            InputIx::Prop => self.push_prop(),
+        }
+    }
+    /// Iterate over the elements of this set of input indices
+    pub fn iter(&self) -> impl Iterator<Item=InputIx> + ExactSizeIterator + DoubleEndedIterator + '_ {
+        self.0.iter().map(|ix| (*ix).into())
+    }
+    /// Get an input index
+    pub fn get(&self, ix: usize) -> Option<InputIx> {
+        self.0.get(ix).map(|ix| (*ix).into())
+    }
+}
+
+impl Deref for InputIxes {
+    type Target = [i32];
+    #[inline]
+    fn deref(&self) -> &[i32] {
+        &self.0
     }
 }
