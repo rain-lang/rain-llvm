@@ -11,6 +11,10 @@ pub enum Error {
     Irrepresentable,
     /// Invalid function representation
     InvalidFuncRepr,
+    /// No current function set
+    NoCurrentFunction,
+    /// No curent basic block set
+    NoCurrentBlock,
     /// An internal error
     InternalError(&'static str),
     /// Not implemented
