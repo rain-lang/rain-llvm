@@ -2,6 +2,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine::JitFunction;
 use inkwell::values::{FunctionValue, IntValue};
 use inkwell::OptimizationLevel;
+use rain_ir::control::ternary::{Ternary};
 use rain_builder::Builder;
 use rain_llvm::codegen::Codegen;
 use std::convert::TryInto;
@@ -225,6 +226,42 @@ fn identity_product_compiles_properly() {
                     assert_eq!(result.second, second);
             }
         }
+    }
+}
+
+#[test]
+fn simple_ternary() {
+    // Setup
+    // let mut builder = Builder::<&str>::new();
+    let context = Context::create();
+    let module = context.create_module("identity_bool");
+    let execution_engine = module
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .unwrap();
+    let mut codegen = Codegen::new(&context, module);
+
+    let t = Ternary::conditional(false.into(), true.into()).unwrap();
+    let f: FunctionValue = codegen.build(&t.into())
+    .expect("Compilation works")
+    .try_into()
+    .expect("Compiles functions");
+
+    // f.print_to_stderr();
+    
+    let _f_name = f
+        .get_name()
+        .to_str()
+        .expect("Generated name must be valid UTF-8");
+
+    // Jit
+    // TODO: Fix seg fault here
+    let jit_f: JitFunction<unsafe extern "C" fn(b: bool) -> bool> =
+        unsafe { execution_engine.get_function(_f_name) }.expect("Valid IR generated");
+
+    // Run
+    unsafe {
+        assert_eq!(jit_f.call(false), true);
+        assert_eq!(jit_f.call(true), false);
     }
 }
 
