@@ -75,10 +75,12 @@ impl<'ctx> Codegen<'ctx> {
                 v
             ),
         };
+        self.builder.build_unconditional_branch(result_br);
 
         // Step 3: compile phi result into result branch
         // Note we stay in the result branch at the end, since further instructions should be placed there
         self.head = Some(result_br);
+        self.builder.position_at_end(result_br);
         let phi_val = self.builder.build_phi(result_repr, "tern");
         phi_val.add_incoming(&[(&high_val, high_br), (&low_val, low_br)]);
 
