@@ -183,13 +183,16 @@ impl IxMap {
     }
     /// Get the index associated with a value
     pub fn get(&self, ix: usize) -> Option<u32> {
-        self.0.get(ix).map(|ix| {
-            if let ReprIx::Val(ix) = ReprIx::from(*ix) {
-                Some(ix)
-            } else {
-                None
-            }
-        }).flatten()
+        self.0
+            .get(ix)
+            .map(|ix| {
+                if let ReprIx::Val(ix) = ReprIx::from(*ix) {
+                    Some(ix)
+                } else {
+                    None
+                }
+            })
+            .flatten()
     }
 }
 
