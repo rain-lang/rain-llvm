@@ -145,6 +145,12 @@ impl From<i32> for ReprIx {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IxMap(Vec<i32>);
 
+impl Default for IxMap {
+    fn default() -> IxMap {
+        IxMap::new()
+    }
+}
+
 impl IxMap {
     /// Create a new set of input indices
     pub fn new() -> IxMap {
