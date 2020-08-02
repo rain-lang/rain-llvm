@@ -265,6 +265,8 @@ impl<'ctx> Codegen<'ctx> {
 
         // Step 3: set region, load parameter vector
         let region = lambda.def_region();
+        self.region = Some(region.clone_region());
+
         let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
         for ix in prototype.mapping.iter() {
             match ix {
@@ -313,9 +315,19 @@ impl<'ctx> Codegen<'ctx> {
             },
             Err(err) => Err(err),
         };
+
         // Step 8: Cleanup: reset current, locals, head, and region
+
+        // Debug assertions: note that `head` and `locals` are allowed to change
+        debug_assert_eq!(self.region.as_ref(), Some(region.as_region()));
+        debug_assert_eq!(self.curr, Some(result_fn));
+
+        // Resets
         self.curr = old_curr;
         self.head = old_head;
+        if let Some(head) = old_head {
+            self.builder.position_at_end(head);
+        }
         self.locals = old_locals;
         self.region = old_region;
 

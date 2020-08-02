@@ -2,8 +2,8 @@
 Code generation for rain gammas
 */
 use super::*;
+use either::Either;
 use inkwell::module::Linkage;
-use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, IntValue};
 use rain_ir::control::ternary::Ternary;
 use rain_ir::region::Regional;
@@ -104,112 +104,65 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             self.region.take()
         };
+        self.region = ternary.cloned_region();
 
-        // Step 2: construct type
-        let pi = ternary.get_ty();
-        let region = pi.def_region();
-        let result = pi.result();
-        if result.depth() != 0 {
-            return Err(Error::NotImplemented(
-                "Non-constant return types for ternary nodes",
-            ));
-        }
-        let result_repr = match self.repr(result)? {
-            Repr::Type(t) => t,
-            Repr::Function(_f) => unimplemented!(),
-            Repr::Empty | Repr::Prop => return Ok(Val::Unit),
-            Repr::Product(p) => p.repr.into(),
+        // Step 2: construct prototype, construct function, handle edge cases
+        //TODO: general get_repr
+        let prototype_or_return = match self.build_function_repr(ternary.get_ty()) {
+            Ok(Repr::Function(prototype)) => Either::Left(prototype),
+            Ok(Repr::Prop) => Either::Right(Ok(Val::Unit)),
+            Ok(r) => panic!("Invalid function representation: {:?}", r),
+            Err(err) => Either::Right(Err(err)),
         };
-        let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
-        let mut input_ixes: Vec<isize> = Vec::with_capacity(region.len());
-        const PROP_IX: isize = -1;
-        let mut has_empty = false;
 
-        // Step 2.a: create parameters
-        for input_ty in region.data().iter() {
-            match self.repr(input_ty)? {
-                Repr::Type(t) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(t);
-                    }
-                }
-                Repr::Function(_) => unimplemented!(),
-                Repr::Prop => {
-                    if !has_empty {
-                        input_ixes.push(PROP_IX);
-                    }
-                }
-                Repr::Empty => has_empty = true,
-                Repr::Product(p) => {
-                    if !has_empty {
-                        input_ixes.push(input_reprs.len() as isize);
-                        input_reprs.push(p.repr.into());
-                    }
-                }
+        let prototype = match prototype_or_return {
+            Either::Left(prototype) => prototype,
+            Either::Right(retv) => {
+                // Reset region
+                self.region = old_region;
+                // Propagate early return, avoiding codegen
+                return retv;
             }
-        }
+        };
 
-        // Edge case: function has an empty parameter, so no need to make any code
-        if has_empty {
-            self.region = old_region; // Reset region!
-            return Ok(Val::Unit);
-        }
-
-        // Step 3: construct a function type
-        let result_ty = result_repr.fn_type(&input_reprs, false);
-
-        // Step 4: construct an empty function of a given type
         let result_fn = self.module.add_function(
-            &format!("__lambda_{}", self.counter),
-            result_ty,
+            &format!("__tern_{}", self.counter),
+            prototype.repr,
             DEFAULT_GAMMA_LINKAGE,
         );
         self.counter += 1;
 
-        // Step 5: load parameter vector
-        let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
-        for ix in input_ixes.iter().copied() {
-            match ix {
-                PROP_IX => {
-                    parameter_values.push(Val::Unit);
-                }
-                ix => {
-                    parameter_values.push(Val::Value(
-                        result_fn
-                            .get_nth_param(ix as u32)
-                            .expect("Index in vector is in bounds"),
-                    ));
-                }
-            }
-        }
-
-        // Step 6: add an entry basic block, registering it, and setting the builder position
+        // Step 3: add an entry basic block, registering it, and setting the builder position
         let entry_bb = self.context.append_basic_block(result_fn, "entry");
         self.builder.position_at_end(entry_bb);
 
-        // Step 7: cache old head, current, and locals, and set new values
+        // Step 4: cache old head, current, and locals, and set new values
         let old_curr = self.curr;
         let old_head = self.head;
         let old_locals = self.locals.take();
         self.curr = Some(result_fn);
         self.head = Some(entry_bb);
 
-        // Step 8: compile ternary, caching error
+        // Step 5: compile ternary, caching error
         let boolean_param = result_fn.get_nth_param(0).unwrap().into_int_value();
         let ternary_result = self.build_ternary_inline(ternary, boolean_param);
 
-        // Step 9: build return
+        // Step 6: build return
         if let Ok(ternary_result) = &ternary_result {
             let return_value: Option<&dyn BasicValue> = match ternary_result {
                 Val::Value(v) => Some(&*v),
                 Val::Function(f) => unimplemented!("Function return for {:?}", f),
-                _ => None
+                _ => None,
             };
             self.builder.build_return(return_value);
         };
 
-        // Step 10: Cleanup: reset current, locals, head, and region, and propagate errors if necessary
+        // Step 7: Cleanup: reset current, locals, head, and region, and propagate errors if necessary
+        // Debug assertions: note that `head` and `locals` are allowed to change
+        debug_assert_eq!(self.region.region(), ternary.region());
+        debug_assert_eq!(self.curr, Some(result_fn));
+
+        // Resets:
         self.curr = old_curr;
         self.head = old_head;
         if let Some(head) = old_head {
@@ -217,6 +170,7 @@ impl<'ctx> Codegen<'ctx> {
         }
         self.locals = old_locals;
         self.region = old_region;
+
         ternary_result?;
 
         // Otherwise, return successfully constructed function
