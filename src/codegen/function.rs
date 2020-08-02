@@ -79,7 +79,7 @@ impl<'ctx> Codegen<'ctx> {
                             ValueEnum::Index(ix) => ix.ix() as usize,
                             _ => unimplemented!(),
                         };
-                        let repr_ix = if let Some(ix) = p.mapping[ix] {
+                        let repr_ix = if let Some(ix) = p.mapping.get(ix) {
                             ix
                         } else {
                             return Ok(Val::Unit);
@@ -183,7 +183,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Step 2: Compute parameter types
         let mut input_reprs: Vec<BasicTypeEnum> = Vec::with_capacity(region.len());
-        let mut input_ixes: InputIxes = InputIxes::with_capacity(region.len() as u32);
+        let mut input_ixes: IxMap = IxMap::with_capacity(region.len() as u32);
         let mut has_empty = false;
 
         for input_ty in region.data().iter() {
@@ -268,10 +268,10 @@ impl<'ctx> Codegen<'ctx> {
         let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
         for ix in prototype.mapping.iter() {
             match ix {
-                InputIx::Prop => {
+                ReprIx::Prop => {
                     parameter_values.push(Val::Unit);
                 }
-                InputIx::Val(ix) => {
+                ReprIx::Val(ix) => {
                     parameter_values.push(Val::Value(
                         result_fn
                             .get_nth_param(ix as u32)

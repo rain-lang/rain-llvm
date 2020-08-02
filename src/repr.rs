@@ -5,8 +5,8 @@ LLVM representations for rain types and values
 use inkwell::types::{BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
 use std::convert::TryFrom;
-use std::rc::Rc;
 use std::ops::Deref;
+use std::rc::Rc;
 
 /**
 A representation of product
@@ -16,7 +16,7 @@ pub struct ProductRepr<'ctx> {
     /// A mapping since we need to skip Repr::Unit
     ///
     /// `mapping[i]` holds the position of ith element in the struct
-    pub mapping: Vec<Option<u32>>,
+    pub mapping: IxMap,
     /// The actual representation
     pub repr: StructType<'ctx>,
 }
@@ -27,9 +27,9 @@ A LLVM function implementing a main function
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionRepr<'ctx> {
     /// A mapping since we need to skip `Repr::Unit`
-    pub mapping: InputIxes,
+    pub mapping: IxMap,
     /// The function type representation
-    pub repr: FunctionType<'ctx>
+    pub repr: FunctionType<'ctx>,
 }
 
 /**
@@ -118,41 +118,41 @@ impl<'ctx> TryFrom<Val<'ctx>> for FunctionValue<'ctx> {
     }
 }
 
-/// An input index
+/// An enumeration for indices into an LLVM representation
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum InputIx {
+pub enum ReprIx {
     /// A value index
     Val(u32),
     /// A propositional index
     Prop,
 }
 
-impl InputIx {
+impl ReprIx {
     /// The index corresponding to a propositional type
     pub const PROP_IX: i32 = -1;
 }
 
-impl From<i32> for InputIx {
-    fn from(ix: i32) -> InputIx {
+impl From<i32> for ReprIx {
+    fn from(ix: i32) -> ReprIx {
         match ix {
-            InputIx::PROP_IX => InputIx::Prop,
-            ix => InputIx::Val(ix as u32)
+            ReprIx::PROP_IX => ReprIx::Prop,
+            ix => ReprIx::Val(ix as u32),
         }
     }
 }
 
-/// A set of input indices
+/// A map of indices into a parameter array to representation indices
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct InputIxes(Vec<i32>);
+pub struct IxMap(Vec<i32>);
 
-impl InputIxes {
+impl IxMap {
     /// Create a new set of input indices
-    pub fn new() -> InputIxes {
+    pub fn new() -> IxMap {
         Self::with_capacity(0)
     }
     /// Create a new set of input indices with the given capacity
-    pub fn with_capacity(n: u32) -> InputIxes {
-        InputIxes(Vec::with_capacity(n as usize))
+    pub fn with_capacity(n: u32) -> IxMap {
+        IxMap(Vec::with_capacity(n as usize))
     }
     /// Push a new value index
     pub fn push_ix(&mut self, ix: u32) {
@@ -160,26 +160,34 @@ impl InputIxes {
     }
     /// Push a new propositional index
     pub fn push_prop(&mut self) {
-        self.0.push(InputIx::PROP_IX)
+        self.0.push(ReprIx::PROP_IX)
     }
     /// Push a new input index
-    pub fn push(&mut self, ix: InputIx) {
+    pub fn push(&mut self, ix: ReprIx) {
         match ix {
-            InputIx::Val(val) => self.push_ix(val),
-            InputIx::Prop => self.push_prop(),
+            ReprIx::Val(val) => self.push_ix(val),
+            ReprIx::Prop => self.push_prop(),
         }
     }
     /// Iterate over the elements of this set of input indices
-    pub fn iter(&self) -> impl Iterator<Item=InputIx> + ExactSizeIterator + DoubleEndedIterator + '_ {
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = ReprIx> + ExactSizeIterator + DoubleEndedIterator + '_ {
         self.0.iter().map(|ix| (*ix).into())
     }
-    /// Get an input index
-    pub fn get(&self, ix: usize) -> Option<InputIx> {
-        self.0.get(ix).map(|ix| (*ix).into())
+    /// Get the index associated with a value
+    pub fn get(&self, ix: usize) -> Option<u32> {
+        self.0.get(ix).map(|ix| {
+            if let ReprIx::Val(ix) = ReprIx::from(*ix) {
+                Some(ix)
+            } else {
+                None
+            }
+        }).flatten()
     }
 }
 
-impl Deref for InputIxes {
+impl Deref for IxMap {
     type Target = [i32];
     #[inline]
     fn deref(&self) -> &[i32] {

@@ -12,7 +12,7 @@ use std::rc::Rc;
 impl<'ctx> Codegen<'ctx> {
     /// Get the representation for a product type
     pub fn repr_product(&mut self, p: &Product) -> Result<Repr<'ctx>, Error> {
-        let mut mapping: Vec<Option<u32>> = Vec::new();
+        let mut mapping = IxMap::new();
         let mut struct_index = 0;
         let mut repr_vec: Vec<BasicTypeEnum<'ctx>> = Vec::new();
         let reprs = p.iter().map(|ty| self.repr(ty));
@@ -21,15 +21,15 @@ impl<'ctx> Codegen<'ctx> {
             match repr {
                 Repr::Type(ty) => {
                     repr_vec.push(ty);
-                    mapping.push(Some(struct_index));
+                    mapping.push_ix(struct_index);
                     struct_index += 1;
                 }
                 Repr::Function(_) => unimplemented!("Functions in structure types!"),
                 Repr::Empty => return Ok(Repr::Empty),
-                Repr::Prop => mapping.push(None),
+                Repr::Prop => mapping.push_prop(),
                 Repr::Product(p) => {
                     repr_vec.push(p.repr.into());
-                    mapping.push(Some(struct_index));
+                    mapping.push_ix(struct_index);
                     struct_index += 1;
                 }
             }
@@ -66,7 +66,8 @@ impl<'ctx> Codegen<'ctx> {
                 };
                 let mut values: Vec<BasicValueEnum<'ctx>> = Vec::new();
                 for (i, mapped) in repr.mapping.iter().enumerate() {
-                    if let Some(_mapped_pos) = mapped {
+                    if let ReprIx::Val(_mapped_pos) = mapped {
+                        //TODO: stop assuming mapped positions increase monotonically!
                         let this_result = self.build(&t[i])?;
                         // Note: This assumes that each type has unique representation
                         let value: BasicValueEnum<'ctx> = match this_result {
