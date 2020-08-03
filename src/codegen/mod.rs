@@ -18,6 +18,7 @@ mod function;
 mod logical;
 mod shim;
 mod tuple;
+mod ternary;
 
 /**
 A `rain` code generation context for a given module.
@@ -137,6 +138,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Parameter(_) => panic!("Unregistered parameter {}, depth = {}!", v, depth),
             ValueEnum::Finite(f) => self.build_finite(f),
             ValueEnum::Index(i) => self.build_index(i),
+            ValueEnum::Ternary(t) => self.build_ternary(t)?,
             _ => unimplemented!("Building value {}", v),
         };
 
