@@ -7,3 +7,5 @@
 pub mod codegen;
 pub mod error;
 pub mod repr;
+
+pub use inkwell::context::Context;
