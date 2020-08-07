@@ -1,6 +1,7 @@
 /*!
 Error handling
 */
+use rain_ir::value;
 
 /// A `rain` code generation error
 #[derive(Debug, Clone)]
@@ -19,4 +20,12 @@ pub enum Error {
     InternalError(&'static str),
     /// Not implemented
     NotImplemented(&'static str),
+    /// A `rain` value error
+    ValueError(value::Error),
+}
+
+impl From<value::Error> for Error {
+    fn from(error: value::Error) -> Error {
+        Error::ValueError(error)
+    }
 }

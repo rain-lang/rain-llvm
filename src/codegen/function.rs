@@ -8,7 +8,7 @@ use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
-use rain_ir::region::{self, Regional};
+use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
 use std::rc::Rc;
@@ -122,7 +122,7 @@ impl<'ctx> Codegen<'ctx> {
         parameter_values: &[Val<'ctx>],
     ) -> Result<Val<'ctx>, Error> {
         // Step 1: get Least Common Region between this lambda's region and the current region
-        let lcr = region::lcr(lambda, &self.curr_region);
+        let lcr = self.curr_region.lcr(lambda)?;
 
         // Step 2: cache the old symbol table, and push a new one
         let mut base = self.locals.as_ref();
