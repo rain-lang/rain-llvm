@@ -4,7 +4,7 @@ The data-structures necessary for `rain` code generation
 use super::repr::*;
 use crate::error::Error;
 use fxhash::FxHashMap as HashMap;
-use hayami_im::{SymbolMap, SymbolTable};
+use hayami_im_rc::{SymbolMap, SymbolTable};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;

@@ -3,7 +3,7 @@ Code generation for rain functions
 */
 use super::*;
 use either::Either;
-use hayami_im::SymbolStack;
+use hayami_im_rc::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
