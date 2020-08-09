@@ -122,11 +122,11 @@ impl<'ctx> Codegen<'ctx> {
         parameter_values: &[Val<'ctx>],
     ) -> Result<Val<'ctx>, Error> {
         // Step 1: get Least Common Region between this lambda's region and the current region
-        let lcr = self.curr_region.lcr(lambda)?;
+        let gcr = self.curr_region.gcr(lambda)?;
 
         // Step 2: cache the old symbol table, and push a new one
         let mut base = self.locals.as_ref();
-        let dd = self.curr_region.depth() - lcr.depth();
+        let dd = self.curr_region.depth() - gcr.depth();
         for _ in 0..dd {
             base = base
                 .expect("Too few layers in symbol table for region")
