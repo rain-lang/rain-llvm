@@ -102,9 +102,9 @@ impl<'ctx> Codegen<'ctx> {
                 ternary.depth()
             )
         } else {
-            self.region.take()
+            self.region.clone()
         };
-        self.region = ternary.cloned_region();
+        self.region = ternary.region().clone_region();
 
         // Step 2: construct prototype, construct function, handle edge cases
         //TODO: general get_repr

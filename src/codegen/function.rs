@@ -186,7 +186,7 @@ impl<'ctx> Codegen<'ctx> {
         let mut input_ixes: IxMap = IxMap::with_capacity(region.len() as u32);
         let mut has_empty = false;
 
-        for input_ty in region.data().iter() {
+        for input_ty in region.param_tys().iter() {
             match self.repr(input_ty)? {
                 Repr::Type(t) => {
                     if !has_empty {
@@ -234,7 +234,7 @@ impl<'ctx> Codegen<'ctx> {
                 lambda.depth()
             )
         } else {
-            self.region.take()
+            self.region.clone()
         };
 
         // Step 2: construct prototype, construct function, handle edge cases
@@ -265,7 +265,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Step 3: set region, load parameter vector
         let region = lambda.def_region();
-        self.region = Some(region.clone_region());
+        self.region = region.clone_region();
 
         let mut parameter_values: Vec<Val<'ctx>> = Vec::with_capacity(region.len());
         for ix in prototype.mapping.iter() {
@@ -319,7 +319,7 @@ impl<'ctx> Codegen<'ctx> {
         // Step 8: Cleanup: reset current, locals, head, and region
 
         // Debug assertions: note that `head` and `locals` are allowed to change
-        debug_assert_eq!(self.region.as_ref(), Some(region.as_region()));
+        debug_assert_eq!(&self.region, region);
         debug_assert_eq!(self.curr, Some(result_fn));
 
         // Resets

@@ -35,13 +35,13 @@ pub struct Codegen<'ctx> {
     /// Local rain values
     locals: Option<SymbolTable<ValId, Val<'ctx>>>,
     /// The current region being inlined
-    curr_region: Option<Region>,
+    curr_region: Region,
     /// The current function being compiled, if any
     curr: Option<FunctionValue<'ctx>>,
     /// The head of the current function being compiled, if any
     head: Option<BasicBlock<'ctx>>,
     /// The current region being compiled, if any
-    region: Option<Region>,
+    region: Region,
     /// Type representations
     reprs: HashMap<TypeId, Repr<'ctx>>,
     /// Function name counter.
@@ -60,10 +60,10 @@ impl<'ctx> Codegen<'ctx> {
         Codegen {
             globals: HashMap::default(),
             locals: None,
-            curr_region: None,
+            curr_region: Region::NULL,
             curr: None,
             head: None,
-            region: None,
+            region: Region::NULL,
             reprs: HashMap::default(),
             counter: 0,
             module,
