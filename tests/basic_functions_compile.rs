@@ -3,6 +3,7 @@ use inkwell::execution_engine::JitFunction;
 use inkwell::values::{FunctionValue, IntValue};
 use inkwell::OptimizationLevel;
 use rain_ir::control::ternary::{Ternary};
+use rain_ir::primitive::bits::{BitsTy};
 use rain_builder::Builder;
 use rain_llvm::codegen::Codegen;
 use std::convert::TryInto;
@@ -260,4 +261,55 @@ fn ternary_not() {
         assert_eq!(jit_f.call(false), true);
         assert_eq!(jit_f.call(true), false);
     }
+}
+
+#[test]
+fn bits_compile() {
+    let context = Context::create();
+    let module = context.create_module("bits");
+    // let execution_engine = module
+    //     .create_jit_execution_engine(OptimizationLevel::None)
+    //     .unwrap();
+    let mut codegen = Codegen::new(&context, module);
+
+    let t = BitsTy(3).data(1).unwrap();
+    let i: IntValue = codegen.build(&t.into())
+    .expect("Compilation works")
+    .try_into()
+    .expect("Compiles values");
+
+    assert_eq!(i.get_type().get_bit_width(), 8);
+
+    let t = BitsTy(1).data(1).unwrap();
+    let i: IntValue = codegen.build(&t.into())
+    .expect("Compilation works")
+    .try_into()
+    .expect("Compiles values");
+
+    assert_eq!(i.get_type().get_bit_width(), 1);
+
+    let t = BitsTy(14).data(8848).unwrap();
+    let i: IntValue = codegen.build(&t.into())
+    .expect("Compilation works")
+    .try_into()
+    .expect("Compiles values");
+
+    assert_eq!(i.get_type().get_bit_width(), 16);
+
+    // i.print_to_stderr();
+    
+    // let _f_name = f
+    //     .get_name()
+    //     .to_str()
+    //     .expect("Generated name must be valid UTF-8");
+
+    // // Jit
+    // let jit_f: JitFunction<unsafe extern "C" fn(b: bool) -> bool> =
+    //     unsafe { execution_engine.get_function(_f_name) }.expect("Valid IR generated");
+
+    // // Run
+    // unsafe {
+    //     assert_eq!(jit_f.call(false), true);
+    //     assert_eq!(jit_f.call(true), false);
+    // }
 }
