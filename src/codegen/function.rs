@@ -57,7 +57,7 @@ impl<'ctx> Codegen<'ctx> {
             return self.build(f);
         }
 
-        match f.as_enum() {
+        let f_enum = match f.as_enum() {
             ValueEnum::Logical(l) => return self.build_logical_expr(*l, args),
             ValueEnum::Add(_a) => {
                 if args.len() != 2 {
@@ -81,10 +81,49 @@ impl<'ctx> Codegen<'ctx> {
                     _ => unimplemented!("Add only applies to bits"),
                 }
             },
-            _ => {}
-        }
+            ValueEnum::Mul(_m) => {
+                if args.len() != 2 {
+                    unimplemented!();
+                }
+                let arg_0 = match args[0].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                let arg_1 = match args[1].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match (arg_0, arg_1) {
+                    (Val::Value(v1), Val::Value(v2)) => {
+                        let int_1: IntValue<'ctx> = v1.try_into().unwrap();
+                        let int_2: IntValue<'ctx> = v2.try_into().unwrap();
+                        let result = self.builder.build_int_mul(int_1, int_2, "__mul_");
+                        return Ok(Val::Value(result.into()))
+                    },
+                    _ => unimplemented!("Mul only applies to bits"),
+                }
+            },
+            ValueEnum::Neg(_n) => {
+                if args.len() != 1 {
+                    unimplemented!()
+                }
+                let arg = match args[0].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match arg {
+                    Val::Value(v) => {
+                        let int: IntValue<'ctx> = v.try_into().unwrap();
+                        let result = self.builder.build_int_neg(int, "__neg_");
+                        return Ok(Val::Value(result.into()))
+                    },
+                    _ => unimplemented!("Mul only applies to bits"),
+                }
+            },
+            f_enum => f_enum
+        };
 
-        let ty = f.ty();
+        let ty = f_enum.ty();
 
         match ty.as_enum() {
             ValueEnum::Product(_p) => {

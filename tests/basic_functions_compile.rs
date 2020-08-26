@@ -4,7 +4,7 @@ use inkwell::values::{FunctionValue, IntValue};
 use inkwell::OptimizationLevel;
 use rain_builder::Builder;
 use rain_ir::control::ternary::Ternary;
-use rain_ir::primitive::bits::{Add, BitsTy};
+use rain_ir::primitive::bits::{Add, BitsTy, Mul, Neg};
 use rain_ir::value::{ValId, Value};
 use rain_llvm::codegen::Codegen;
 use rain_llvm::repr::Val;
@@ -373,4 +373,99 @@ fn bits_add() {
     //     assert_eq!(jit_f.call(false), true);
     //     assert_eq!(jit_f.call(true), false);
     // }
+}
+
+#[test]
+fn bits_mul() {
+    let context = Context::create();
+    let module = context.create_module("bits");
+    // let execution_engine = module
+    //     .create_jit_execution_engine(OptimizationLevel::None)
+    //     .unwrap();
+    let mut codegen = Codegen::new(&context, module);
+
+    let t1 = BitsTy(8).data(3).unwrap();
+    // let i1: IntValue = codegen.build(&t1.into())
+    // .expect("Compilation works")
+    // .try_into()
+    // .expect("Compiles values");
+
+    let t2 = BitsTy(8).data(2).unwrap();
+    // let i2: IntValue = codegen.build(&t2.into())
+    // .expect("Compilation works")
+    // .try_into()
+    // .expect("Compiles values");
+
+    let add_struct = Mul::new(8).into_var();
+
+    let arg_vec: Vec<ValId> = vec![t1.into(), t2.into()];
+    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+        Val::Value(v) => {
+            let v: IntValue = v.try_into().unwrap();
+            assert_eq!(v.get_type().get_bit_width(), 8);
+            v
+        },
+        _ => panic!("Result of building Add should be an int"),
+    };
+    assert_eq!(app_result.get_zero_extended_constant(), Some(6));
+    assert!(app_result.is_const());
+
+    // i.print_to_stderr();
+    // let _f_name = f
+    //     .get_name()
+    //     .to_str()
+    //     .expect("Generated name must be valid UTF-8");
+
+    // // Jit
+    // let jit_f: JitFunction<unsafe extern "C" fn(b: bool) -> bool> =
+    //     unsafe { execution_engine.get_function(_f_name) }.expect("Valid IR generated");
+
+    // // Run
+    // unsafe {
+    //     assert_eq!(jit_f.call(false), true);
+    //     assert_eq!(jit_f.call(true), false);
+    // }
+}
+
+#[test]
+fn bits_neg() {
+    let context = Context::create();
+    let module = context.create_module("bits");
+    // let execution_engine = module
+    //     .create_jit_execution_engine(OptimizationLevel::None)
+    //     .unwrap();
+    let mut codegen = Codegen::new(&context, module);
+
+    let t1 = BitsTy(8).data(3).unwrap();
+
+    let add_struct = Neg::new(8).into_var();
+
+    let arg_vec: Vec<ValId> = vec![t1.into()];
+    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+        Val::Value(v) => {
+            let v: IntValue = v.try_into().unwrap();
+            assert_eq!(v.get_type().get_bit_width(), 8);
+            v
+        },
+        _ => panic!("Result of building Add should be an int"),
+    };
+    assert_eq!(app_result.get_zero_extended_constant(), Some(253));
+    assert!(app_result.is_const());
+
+    let t1 = BitsTy(8).data(253).unwrap();
+
+    let add_struct = Neg::new(8).into_var();
+
+    let arg_vec: Vec<ValId> = vec![t1.into()];
+    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+        Val::Value(v) => {
+            let v: IntValue = v.try_into().unwrap();
+            assert_eq!(v.get_type().get_bit_width(), 8);
+            v
+        },
+        _ => panic!("Result of building Add should be an int"),
+    };
+    assert_eq!(app_result.get_zero_extended_constant(), Some(3));
+    assert!(app_result.is_const());
+
 }
