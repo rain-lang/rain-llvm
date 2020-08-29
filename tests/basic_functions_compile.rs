@@ -323,6 +323,8 @@ fn bits_compile() {
     // }
 }
 
+/*
+
 #[test]
 fn bits_add() {
     let context = Context::create();
@@ -469,3 +471,5 @@ fn bits_neg() {
     assert!(app_result.is_const());
 
 }
+
+*/
