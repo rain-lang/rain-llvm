@@ -6,12 +6,13 @@ use either::Either;
 use hayami_im_rc::SymbolStack;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
 use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
 use std::rc::Rc;
+use std::convert::TryInto;
 
 /// The default linkage of lambda values
 pub const DEFAULT_LAMBDA_LINKAGE: Option<Linkage> = None;
@@ -56,12 +57,73 @@ impl<'ctx> Codegen<'ctx> {
             return self.build(f);
         }
 
-        //TODO: more generic inline?
-        if let ValueEnum::Logical(l) = f.as_enum() {
-            return self.build_logical_expr(*l, args);
-        }
+        let f_enum = match f.as_enum() {
+            ValueEnum::Logical(l) => return self.build_logical_expr(*l, args),
+            ValueEnum::Add(_a) => {
+                if args.len() < 3 {
+                    unimplemented!("Partial add application");
+                }
+                let arg_1 = match args[1].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                let arg_2 = match args[2].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match (arg_1, arg_2) {
+                    (Val::Value(v1), Val::Value(v2)) => {
+                        let int_1: IntValue<'ctx> = v1.try_into().unwrap();
+                        let int_2: IntValue<'ctx> = v2.try_into().unwrap();
+                        let result = self.builder.build_int_add(int_1, int_2, "__add_");
+                        return Ok(Val::Value(result.into()))
+                    },
+                    _ => unimplemented!("Add only applies to bits"),
+                }
+            },
+            ValueEnum::Mul(_m) => {
+                if args.len() < 3 {
+                    unimplemented!("Partial multiplication application");
+                }
+                let arg_1 = match args[1].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                let arg_2 = match args[2].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match (arg_1, arg_2) {
+                    (Val::Value(v1), Val::Value(v2)) => {
+                        let int_1: IntValue<'ctx> = v1.try_into().unwrap();
+                        let int_2: IntValue<'ctx> = v2.try_into().unwrap();
+                        let result = self.builder.build_int_mul(int_1, int_2, "__mul_");
+                        return Ok(Val::Value(result.into()))
+                    },
+                    _ => unimplemented!("Mul only applies to bits"),
+                }
+            },
+            ValueEnum::Neg(_n) => {
+                if args.len() < 2 {
+                    unimplemented!("Partial negation application")
+                }
+                let arg = match args[1].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match arg {
+                    Val::Value(v) => {
+                        let int: IntValue<'ctx> = v.try_into().unwrap();
+                        let result = self.builder.build_int_neg(int, "__neg_");
+                        return Ok(Val::Value(result.into()))
+                    },
+                    _ => unimplemented!("Mul only applies to bits"),
+                }
+            },
+            f_enum => f_enum
+        };
 
-        let ty = f.ty();
+        let ty = f_enum.ty();
 
         match ty.as_enum() {
             ValueEnum::Product(_p) => {

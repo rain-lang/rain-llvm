@@ -29,7 +29,7 @@ impl<'ctx> Codegen<'ctx> {
         let high_ty = ternary.high().ty();
         let low_ty = ternary.low().ty();
         let result_repr = if high_ty == low_ty {
-            self.repr(high_ty.as_arc())?
+            self.repr(high_ty.as_var())?
         } else {
             unimplemented!(
                 "Dependently typed ternary nodes: high_ty = {:?} != low_ty = {:?}, ternary = {:#?}",

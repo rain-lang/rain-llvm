@@ -19,6 +19,7 @@ mod logical;
 mod shim;
 mod tuple;
 mod ternary;
+mod bits;
 
 /**
 A `rain` code generation context for a given module.
@@ -139,6 +140,7 @@ impl<'ctx> Codegen<'ctx> {
             ValueEnum::Finite(f) => self.build_finite(f),
             ValueEnum::Index(i) => self.build_index(i),
             ValueEnum::Ternary(t) => self.build_ternary(t)?,
+            ValueEnum::Bits(t) => self.build_bits(t),
             _ => unimplemented!("Building value {}", v),
         };
 
