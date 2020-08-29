@@ -323,8 +323,6 @@ fn bits_compile() {
     // }
 }
 
-/*
-
 #[test]
 fn bits_add() {
     let context = Context::create();
@@ -346,15 +344,18 @@ fn bits_add() {
     // .try_into()
     // .expect("Compiles values");
 
-    let add_struct = Add::new(8).into_var();
+    let add_struct = Add.into_var();
 
-    let arg_vec: Vec<ValId> = vec![t1.into(), t2.into()];
-    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+    let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into(), t2.into()];
+    let app_result = match codegen
+        .build_app(add_struct.as_val(), &arg_vec[..])
+        .unwrap()
+    {
         Val::Value(v) => {
             let v: IntValue = v.try_into().unwrap();
             assert_eq!(v.get_type().get_bit_width(), 8);
             v
-        },
+        }
         _ => panic!("Result of building Add should be an int"),
     };
     assert_eq!(app_result.get_zero_extended_constant(), Some(3));
@@ -398,15 +399,18 @@ fn bits_mul() {
     // .try_into()
     // .expect("Compiles values");
 
-    let add_struct = Mul::new(8).into_var();
+    let add_struct = Mul.into_var();
 
-    let arg_vec: Vec<ValId> = vec![t1.into(), t2.into()];
-    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+    let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into(), t2.into()];
+    let app_result = match codegen
+        .build_app(add_struct.as_val(), &arg_vec[..])
+        .unwrap()
+    {
         Val::Value(v) => {
             let v: IntValue = v.try_into().unwrap();
             assert_eq!(v.get_type().get_bit_width(), 8);
             v
-        },
+        }
         _ => panic!("Result of building Add should be an int"),
     };
     assert_eq!(app_result.get_zero_extended_constant(), Some(6));
@@ -440,15 +444,18 @@ fn bits_neg() {
 
     let t1 = BitsTy(8).data(3).unwrap();
 
-    let add_struct = Neg::new(8).into_var();
+    let add_struct = Neg.into_var();
 
-    let arg_vec: Vec<ValId> = vec![t1.into()];
-    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+    let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into()];
+    let app_result = match codegen
+        .build_app(add_struct.as_val(), &arg_vec[..])
+        .unwrap()
+    {
         Val::Value(v) => {
             let v: IntValue = v.try_into().unwrap();
             assert_eq!(v.get_type().get_bit_width(), 8);
             v
-        },
+        }
         _ => panic!("Result of building Add should be an int"),
     };
     assert_eq!(app_result.get_zero_extended_constant(), Some(253));
@@ -456,20 +463,18 @@ fn bits_neg() {
 
     let t1 = BitsTy(8).data(253).unwrap();
 
-    let add_struct = Neg::new(8).into_var();
-
-    let arg_vec: Vec<ValId> = vec![t1.into()];
-    let app_result = match codegen.build_app(add_struct.as_val(), &arg_vec[..]).unwrap() {
+    let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into()];
+    let app_result = match codegen
+        .build_app(add_struct.as_val(), &arg_vec[..])
+        .unwrap()
+    {
         Val::Value(v) => {
             let v: IntValue = v.try_into().unwrap();
             assert_eq!(v.get_type().get_bit_width(), 8);
             v
-        },
+        }
         _ => panic!("Result of building Add should be an int"),
     };
     assert_eq!(app_result.get_zero_extended_constant(), Some(3));
     assert!(app_result.is_const());
-
 }
-
-*/
