@@ -60,8 +60,8 @@ impl<'ctx> Codegen<'ctx> {
         let f_enum = match f.as_enum() {
             ValueEnum::Logical(l) => return self.build_logical_expr(*l, args),
             ValueEnum::Add(_a) => {
-                if args.len() != 2 {
-                    unimplemented!();
+                if args.len() < 3 {
+                    unimplemented!("Partial add application");
                 }
                 let arg_0 = match args[0].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
@@ -82,8 +82,8 @@ impl<'ctx> Codegen<'ctx> {
                 }
             },
             ValueEnum::Mul(_m) => {
-                if args.len() != 2 {
-                    unimplemented!();
+                if args.len() < 3 {
+                    unimplemented!("Partial multiplication application");
                 }
                 let arg_0 = match args[0].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
@@ -104,8 +104,8 @@ impl<'ctx> Codegen<'ctx> {
                 }
             },
             ValueEnum::Neg(_n) => {
-                if args.len() != 1 {
-                    unimplemented!()
+                if args.len() < 2 {
+                    unimplemented!("Partial negation application")
                 }
                 let arg = match args[0].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
