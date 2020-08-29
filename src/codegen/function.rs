@@ -63,15 +63,15 @@ impl<'ctx> Codegen<'ctx> {
                 if args.len() < 3 {
                     unimplemented!("Partial add application");
                 }
-                let arg_0 = match args[0].as_enum() {
-                    ValueEnum::Bits(b) => self.build_bits(b),
-                    _ => unimplemented!(),
-                };
                 let arg_1 = match args[1].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
                     _ => unimplemented!(),
                 };
-                match (arg_0, arg_1) {
+                let arg_2 = match args[2].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match (arg_1, arg_2) {
                     (Val::Value(v1), Val::Value(v2)) => {
                         let int_1: IntValue<'ctx> = v1.try_into().unwrap();
                         let int_2: IntValue<'ctx> = v2.try_into().unwrap();
@@ -85,15 +85,15 @@ impl<'ctx> Codegen<'ctx> {
                 if args.len() < 3 {
                     unimplemented!("Partial multiplication application");
                 }
-                let arg_0 = match args[0].as_enum() {
-                    ValueEnum::Bits(b) => self.build_bits(b),
-                    _ => unimplemented!(),
-                };
                 let arg_1 = match args[1].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
                     _ => unimplemented!(),
                 };
-                match (arg_0, arg_1) {
+                let arg_2 = match args[2].as_enum() {
+                    ValueEnum::Bits(b) => self.build_bits(b),
+                    _ => unimplemented!(),
+                };
+                match (arg_1, arg_2) {
                     (Val::Value(v1), Val::Value(v2)) => {
                         let int_1: IntValue<'ctx> = v1.try_into().unwrap();
                         let int_2: IntValue<'ctx> = v2.try_into().unwrap();
@@ -107,7 +107,7 @@ impl<'ctx> Codegen<'ctx> {
                 if args.len() < 2 {
                     unimplemented!("Partial negation application")
                 }
-                let arg = match args[0].as_enum() {
+                let arg = match args[1].as_enum() {
                     ValueEnum::Bits(b) => self.build_bits(b),
                     _ => unimplemented!(),
                 };
