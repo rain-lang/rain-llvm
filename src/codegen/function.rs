@@ -12,8 +12,8 @@ use rain_ir::primitive::bits::BinOp;
 use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
-use std::rc::Rc;
 use std::convert::TryInto;
+use std::rc::Rc;
 
 /// The default linkage of lambda values
 pub const DEFAULT_LAMBDA_LINKAGE: Option<Linkage> = None;
@@ -80,13 +80,15 @@ impl<'ctx> Codegen<'ctx> {
                             BinOp::Add => self.builder.build_int_add(int_1, int_2, "__add"),
                             BinOp::Sub => self.builder.build_int_sub(int_1, int_2, "__sub"),
                             BinOp::Mul => self.builder.build_int_mul(int_1, int_2, "__mul"),
-                            BinOp::Mod => self.builder.build_int_unsigned_rem(int_1, int_2, "__umod"),
+                            BinOp::Mod => {
+                                self.builder.build_int_unsigned_rem(int_1, int_2, "__umod")
+                            }
                         };
-                        return Ok(Val::Value(result.into()))
-                    },
+                        return Ok(Val::Value(result.into()));
+                    }
                     _ => unimplemented!("Add only applies to bits"),
                 }
-            },
+            }
             ValueEnum::Neg(_n) => {
                 if args.len() < 2 {
                     unimplemented!("Partial negation application")
@@ -99,12 +101,12 @@ impl<'ctx> Codegen<'ctx> {
                     Val::Value(v) => {
                         let int: IntValue<'ctx> = v.try_into().unwrap();
                         let result = self.builder.build_int_neg(int, "__neg_");
-                        return Ok(Val::Value(result.into()))
-                    },
+                        return Ok(Val::Value(result.into()));
+                    }
                     _ => unimplemented!("Mul only applies to bits"),
                 }
-            },
-            f_enum => f_enum
+            }
+            f_enum => f_enum,
         };
 
         let ty = f_enum.ty();

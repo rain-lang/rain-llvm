@@ -13,13 +13,13 @@ use inkwell::values::FunctionValue;
 use rain_ir::region::{Region, Regional};
 use rain_ir::value::{TypeId, ValId, ValueEnum};
 
+mod bits;
 mod finite;
 mod function;
 mod logical;
 mod shim;
-mod tuple;
 mod ternary;
-mod bits;
+mod tuple;
 
 /**
 A `rain` code generation context for a given module.
@@ -92,7 +92,7 @@ impl<'ctx> Codegen<'ctx> {
     pub fn repr(&mut self, t: &TypeId) -> Result<Repr<'ctx>, Error> {
         // Special cases
         if let ValueEnum::BoolTy(_) = t.as_enum() {
-            return Ok(Repr::Type(self.context.bool_type().into()))
+            return Ok(Repr::Type(self.context.bool_type().into()));
         }
         // Cached case
         if let Some(repr) = self.reprs.get(t) {

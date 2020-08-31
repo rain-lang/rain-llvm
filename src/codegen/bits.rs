@@ -4,17 +4,14 @@ Code generation for bits type of `rain`
 
 use super::*;
 use inkwell::types::IntType;
+use rain_ir::primitive::bits::{Bits, BitsTy};
 use rain_ir::typing::Typed;
-use rain_ir::primitive::bits::{BitsTy, Bits};
-use std::convert::{TryFrom};
+use std::convert::TryFrom;
 
 impl<'ctx> Codegen<'ctx> {
-    /// Compile a BitsTy into a LLVM value 
+    /// Compile a BitsTy into a LLVM value
     pub fn build_bitsty(&mut self, b: &BitsTy) -> Val<'ctx> {
-        unimplemented!(
-            "Compile 32-bit LLVM integer constant for BitsTy {}",
-            b
-        )
+        unimplemented!("Compile 32-bit LLVM integer constant for BitsTy {}", b)
     }
     /// Get the representation for a bitsTy type
     pub fn repr_bitsty(&mut self, b: &BitsTy) -> Repr<'ctx> {
@@ -53,7 +50,7 @@ impl<'ctx> Codegen<'ctx> {
                 } else {
                     panic!("The width of Bits {} doesn't match with its type ", b)
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }
