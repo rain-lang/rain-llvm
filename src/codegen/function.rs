@@ -4,15 +4,18 @@ Code generation for rain functions
 use super::*;
 use either::Either;
 use hayami_im_rc::SymbolStack;
+use inkwell::IntPredicate;
 use inkwell::module::Linkage;
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum, IntType};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
 use rain_ir::primitive::bits::BinOp;
 use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
+use rain_ir::value::{Value, ValId};
 use std::convert::TryInto;
+use std::convert::TryFrom;
 use std::rc::Rc;
 
 /// The default linkage of lambda values
@@ -105,7 +108,44 @@ impl<'ctx> Codegen<'ctx> {
                     }
                     _ => unimplemented!("Mul only applies to bits"),
                 }
-            }
+            },
+            ValueEnum::Bits(b) => {
+                if args.len() != 1 {
+                    unimplemented!();
+                }
+                let ix = match args[0].as_enum() {
+                    ValueEnum::Index(ix) => ix.ix() as usize,
+                    _ => unimplemented!(),
+                };
+                let built_bitvec = match self.build(&b.clone().into_val())? {
+                    Val::Value(BasicValueEnum::IntValue(i)) => i,
+                    Val::Contr => return Ok(Val::Contr),
+                    _ => panic!("Internal Error: bits guarantees IntValue"),
+                };
+                let tmp = b.ty().into_val();
+                let b_ty = match tmp.as_enum() {
+                    ValueEnum::BitsTy(b) => b,
+                    _ => unreachable!(),
+                };
+                let this_type = match self.repr_bitsty(b_ty) {
+                    Repr::Type(t) => t,
+                    _ => unreachable!(),
+                };
+                let probe = IntType::try_from(this_type)
+                .expect("An int type")
+                .const_int(1 << ix as u64, false);
+                let zero = IntType::try_from(this_type)
+                .expect("An int type")
+                .const_int(0 as u64, false);
+                let result = self.builder.build_and(built_bitvec, probe, "__bits_idx");
+                let normalized = self.builder.build_int_compare(
+                    IntPredicate::NE,
+                    result,
+                    zero,
+                    "__bits_idx"
+                );
+                return Ok(Val::Value(normalized.into()));
+            },
             f_enum => f_enum,
         };
 
@@ -144,7 +184,7 @@ impl<'ctx> Codegen<'ctx> {
                         Ok(Val::Value(element))
                     }
                 }
-            }
+            },
             ValueEnum::Lambda(l) => match self.build_lambda(l)? {
                 Val::Contr => Ok(Val::Contr),
                 Val::Unit => unimplemented!("Unit lambda representation"), //TODO: think about this...
