@@ -4,7 +4,7 @@ use inkwell::values::{FunctionValue, IntValue};
 use inkwell::OptimizationLevel;
 use rain_builder::Builder;
 use rain_ir::control::ternary::Ternary;
-use rain_ir::primitive::bits::{Add, BitsTy, Mul, Neg};
+use rain_ir::primitive::bits::{BitsTy, BitsOp, Neg};
 use rain_ir::value::{ValId, Value};
 use rain_llvm::codegen::Codegen;
 use rain_llvm::repr::Val;
@@ -344,7 +344,7 @@ fn bits_add() {
     // .try_into()
     // .expect("Compiles values");
 
-    let add_struct = Add.into_var();
+    let add_struct = BitsOp::Add.into_var();
 
     let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into(), t2.into()];
     let app_result = match codegen
@@ -399,7 +399,7 @@ fn bits_mul() {
     // .try_into()
     // .expect("Compiles values");
 
-    let add_struct = Mul.into_var();
+    let add_struct = BitsOp::Mul.into_var();
 
     let arg_vec: Vec<ValId> = vec![BitsTy(8).into_val(), t1.into(), t2.into()];
     let app_result = match codegen
