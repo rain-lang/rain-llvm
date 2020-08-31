@@ -8,7 +8,7 @@ use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue};
 use rain_ir::function::{lambda::Lambda, pi::Pi};
-use rain_ir::primitive::bits::BitsOp;
+use rain_ir::primitive::bits::BinOp;
 use rain_ir::region::Regional;
 use rain_ir::typing::Typed;
 use rain_ir::value::expr::Sexpr;
@@ -60,7 +60,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let f_enum = match f.as_enum() {
             ValueEnum::Logical(l) => return self.build_logical_expr(*l, args),
-            ValueEnum::BitsOp(b) => {
+            ValueEnum::BinOp(b) => {
                 if args.len() < 3 {
                     unimplemented!("Partial add application");
                 }
@@ -77,10 +77,10 @@ impl<'ctx> Codegen<'ctx> {
                         let int_1: IntValue<'ctx> = v1.try_into().unwrap();
                         let int_2: IntValue<'ctx> = v2.try_into().unwrap();
                         let result = match b {
-                            BitsOp::Add => self.builder.build_int_add(int_1, int_2, "__add"),
-                            BitsOp::Sub => self.builder.build_int_sub(int_1, int_2, "__sub"),
-                            BitsOp::Mul => self.builder.build_int_mul(int_1, int_2, "__mul"),
-                            BitsOp::Mod => self.builder.build_int_unsigned_rem(int_1, int_2, "__umod"),
+                            BinOp::Add => self.builder.build_int_add(int_1, int_2, "__add"),
+                            BinOp::Sub => self.builder.build_int_sub(int_1, int_2, "__sub"),
+                            BinOp::Mul => self.builder.build_int_mul(int_1, int_2, "__mul"),
+                            BinOp::Mod => self.builder.build_int_unsigned_rem(int_1, int_2, "__umod"),
                         };
                         return Ok(Val::Value(result.into()))
                     },
