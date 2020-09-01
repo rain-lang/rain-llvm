@@ -8,8 +8,7 @@ use rain_ir::primitive::bits::{BinOp, BitsTy, Neg};
 use rain_ir::value::{ValId, Value};
 use rain_llvm::codegen::Codegen;
 use rain_llvm::repr::Val;
-use std::convert::Into;
-use std::convert::TryInto;
+use std::convert::{Into, TryInto};
 
 #[test]
 fn boolean_identity_compiles() {
@@ -477,4 +476,61 @@ fn bits_neg() {
     };
     assert_eq!(app_result.get_zero_extended_constant(), Some(3));
     assert!(app_result.is_const());
+}
+
+#[test]
+fn bits_idx() {
+    let mut builder = Builder::<&str>::new();
+    let context = Context::create();
+    let module = context.create_module("bits");
+    // let execution_engine = module
+    //     .create_jit_execution_engine(OptimizationLevel::None)
+    //     .unwrap();
+    let mut codegen = Codegen::new(&context, module);
+
+    {
+        let t1 = BitsTy(8).data(3).unwrap();
+        let (rest, ix) = builder
+            .parse_expr("#ix(8)[1]")
+            .expect("Valid Index Instance");
+        assert_eq!(rest, "");
+
+        let arg_vec: Vec<ValId> = vec![ix.into()];
+        let app_result = match codegen
+            .build_app(&t1.into_val(), &arg_vec[..])
+            .unwrap()
+        {
+            Val::Value(v) => {
+                let v: IntValue = v.try_into().unwrap();
+                assert_eq!(v.get_type().get_bit_width(), 1);
+                v
+            }
+            _ => panic!("Result of building Indexing should be an int"),
+        };
+        assert!(app_result.is_const());
+        assert_eq!(app_result.get_zero_extended_constant(), Some(1));
+    }
+    
+    {
+        let t1 = BitsTy(8).data(3).unwrap();
+        let (rest, ix) = builder
+            .parse_expr("#ix(8)[4]")
+            .expect("Valid Index Instance");
+        assert_eq!(rest, "");
+
+        let arg_vec: Vec<ValId> = vec![ix.into()];
+        let app_result = match codegen
+            .build_app(&t1.into_val(), &arg_vec[..])
+            .unwrap()
+        {
+            Val::Value(v) => {
+                let v: IntValue = v.try_into().unwrap();
+                assert_eq!(v.get_type().get_bit_width(), 1);
+                v
+            }
+            _ => panic!("Result of building Indexing should be an int"),
+        };
+        assert!(app_result.is_const());
+        assert_eq!(app_result.get_zero_extended_constant(), Some(0));
+    }
 }
